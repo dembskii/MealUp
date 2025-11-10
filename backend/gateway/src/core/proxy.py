@@ -1,0 +1,125 @@
+import httpx
+from fastapi import Request, Response, HTTPException
+from typing import Optional, Dict
+import logging
+from src.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+class ServiceProxy:
+    """Proxy for forwarding requests to microservices with timeout and retry logic"""
+    
+    def __init__(self):
+        self.timeout = httpx.Timeout(
+            timeout=settings.REQUEST_TIMEOUT,
+            connect=settings.CONNECT_TIMEOUT
+        )
+        self.services = {
+            "auth": settings.AUTH_SERVICE_URL,
+            "user": settings.USER_SERVICE_URL,
+        }
+    
+    async def forward_request(
+        self,
+        service_name: str,
+        path: str,
+        method: str = "GET",
+        headers: Optional[Dict] = None,
+        body: Optional[bytes] = None,
+        params: Optional[Dict] = None,
+    ) -> Response:
+        """
+        Forward request to microservice with timeout and error handling
+        
+        Args:
+            service_name: Name of the service (auth, user, recipe, meal_plan)
+            path: Path to forward to (e.g., /users/123)
+            method: HTTP method (GET, POST, PUT, DELETE, etc.)
+            headers: Request headers
+            body: Request body
+            params: Query parameters
+            
+        Returns:
+            Response from the microservice
+            
+        Raises:
+            HTTPException: If service is unavailable or returns error
+        """
+        if service_name not in self.services:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown service: {service_name}"
+            )
+        
+        service_url = self.services[service_name]
+        url = f"{service_url}{path}"
+        
+        # Filter headers (remove host, etc.)
+        filtered_headers = self._filter_headers(headers or {})
+        
+        logger.info(f"Proxying {method} request to {service_name}: {url}")
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.request(
+                    method=method,
+                    url=url,
+                    headers=filtered_headers,
+                    content=body,
+                    params=params,
+                    follow_redirects=True
+                )
+                
+                # Return response with original status code
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type")
+                )
+                
+        except httpx.TimeoutException:
+            logger.error(f"Timeout while connecting to {service_name} service")
+            raise HTTPException(
+                status_code=504,
+                detail=f"Gateway timeout: {service_name} service did not respond in time"
+            )
+        except httpx.ConnectError:
+            logger.error(f"Cannot connect to {service_name} service at {service_url}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service unavailable: Cannot connect to {service_name} service"
+            )
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error while calling {service_name}: {str(e)}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Bad gateway: Error communicating with {service_name} service"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error while calling {service_name}: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal server error while proxying to {service_name}"
+            )
+    
+    def _filter_headers(self, headers: Dict) -> Dict:
+        """Filter out headers that shouldn't be forwarded"""
+        # Headers to exclude
+        excluded_headers = {
+            "host",
+            "content-length",
+            "connection",
+            "keep-alive",
+            "transfer-encoding",
+            "upgrade",
+        }
+        
+        return {
+            key: value
+            for key, value in headers.items()
+            if key.lower() not in excluded_headers
+        }
+
+# Global proxy instance
+proxy = ServiceProxy()
