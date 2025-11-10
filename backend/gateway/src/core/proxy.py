@@ -28,23 +28,7 @@ class ServiceProxy:
         body: Optional[bytes] = None,
         params: Optional[Dict] = None,
     ) -> Response:
-        """
-        Forward request to microservice with timeout and error handling
         
-        Args:
-            service_name: Name of the service (auth, user, recipe, meal_plan)
-            path: Path to forward to (e.g., /users/123)
-            method: HTTP method (GET, POST, PUT, DELETE, etc.)
-            headers: Request headers
-            body: Request body
-            params: Query parameters
-            
-        Returns:
-            Response from the microservice
-            
-        Raises:
-            HTTPException: If service is unavailable or returns error
-        """
         if service_name not in self.services:
             raise HTTPException(
                 status_code=400,
