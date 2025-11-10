@@ -1,9 +1,9 @@
 services:
   # API Gateway
   api-gateway:
-    build: ./backend/api-gateway
+    build: ./backend/gateway
     ports:
-      - "8000:3000"
+      - "8000:8000"
     environment:
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL}
       - USER_SERVICE_URL=${USER_SERVICE_URL}
@@ -13,15 +13,15 @@ services:
       - ANALYTICS_SERVICE_URL=${ANALYTICS_SERVICE_URL}
       - FORUM_SERVICE_URL=${FORUM_SERVICE_URL}
       - NOTIFICATION_SERVICE_URL=${NOTIFICATION_SERVICE_URL}
-    depends_on:
-      - auth-service
-      - user-service
-      - recipe-service
-      - workout-service
-      - payment-service
-      - analytics-service
-      - forum-service
-      - notification-service
+    # depends_on:
+      # - auth-service
+      # - user-service
+      # - recipe-service
+      # - workout-service
+      # - payment-service
+      # - analytics-service
+      # - forum-service
+      # - notification-service
     networks:
       - mealup-network
 
@@ -29,7 +29,7 @@ services:
   auth-service:
     build: ./backend/auth-service
     ports:
-      - "8001:3001"
+      - "8001:8001"
     environment:
       - REDIS_AUTH_URL=${REDIS_AUTH_URL}
     depends_on:
@@ -55,7 +55,7 @@ services:
   user-service:
     build: ./backend/user-service
     ports:
-      - "8002:3002"
+      - "8002:8002"
     environment:
       - USER_DATABASE_URL=${USER_DATABASE_URL}
     depends_on:
@@ -84,7 +84,7 @@ services:
   recipe-service:
     build: ./backend/recipe-service
     ports:
-      - "8003:3003"
+      - "8003:8003"
     environment:
       - MONGODB_URL=${RECIPE_MONGODB_URL}
     depends_on:
@@ -112,7 +112,7 @@ services:
   workout-service:
     build: ./backend/workout-service
     ports:
-      - "8004:3004"
+      - "8004:8004"
     environment:
       - MONGODB_URL=${WORKOUT_MONGODB_URL}
     depends_on:
@@ -140,7 +140,7 @@ services:
   payment-service:
     build: ./backend/payment-service
     ports:
-      - "8005:3005"
+      - "8005:8005"
     environment:
       - PAYMENT_DATABASE_URL=${PAYMENT_DATABASE_URL}
     depends_on:
@@ -169,7 +169,7 @@ services:
   analytics-service:
     build: ./backend/analytics-service
     ports:
-      - "8006:3006"
+      - "8006:8006"
     environment:
       - MONGODB_URL=${ANALYTICS_MONGODB_URL}
     depends_on:
@@ -197,7 +197,7 @@ services:
   forum-service:
     build: ./backend/forum-service
     ports:
-      - "8007:3007"
+      - "8007:8007"
     environment:
       - FORUM_DATABASE_URL=${FORUM_DATABASE_URL}
     depends_on:
@@ -226,7 +226,7 @@ services:
   notification-service:
     build: ./backend/notification-service
     ports:
-      - "8008:3008"
+      - "8008:8008"
     environment:
       - REDIS_NOT_URL=${REDIS_NOT_URL}
     depends_on:
