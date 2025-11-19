@@ -13,6 +13,12 @@ services:
       - ANALYTICS_SERVICE_URL=${ANALYTICS_SERVICE_URL}
       - FORUM_SERVICE_URL=${FORUM_SERVICE_URL}
       - NOTIFICATION_SERVICE_URL=${NOTIFICATION_SERVICE_URL}
+      - PROJECT_NAME=API Gateway
+      - VERSION=1.0.0
+      - ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8000"]
+      - REQUEST_TIMEOUT=30.0
+      - CONNECT_TIMEOUT=5.0
+      - MAX_RETRIES=3
     # depends_on:
       # - auth-service
       # - user-service
@@ -31,6 +37,14 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - PROJECT_NAME=Auth Service
+      - VERSION=1.0.0
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
+      - AUTH0_REDIRECT_URI=http://localhost:8000/api/v1/auth/callback
+      - FRONTEND_URL=http://localhost:3000
+      - ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8000"]
       - REDIS_AUTH_URL=${REDIS_AUTH_URL}
     depends_on:
       auth-redis:
@@ -41,6 +55,8 @@ services:
   auth-redis:
     image: redis:7-alpine
     command: redis-server --requirepass ${AUTH_REDIS_PASSWORD} --appendonly yes
+    ports:
+      - "6379:6379" 
     volumes:
       - auth-redis-data:/data
     networks:
