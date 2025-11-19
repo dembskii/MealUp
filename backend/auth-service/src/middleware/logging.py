@@ -6,12 +6,16 @@ from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
 
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log all incoming requests and responses"""
     
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
-        logger.info(f"Incoming request: {request.method} {request.url.path}")
+        logger.info(
+            f"Incoming request: {request.method} {request.url.path} "
+            f"| Client: {request.client.host if request.client else 'unknown'}"
+        )
         
         try:
             response = await call_next(request)

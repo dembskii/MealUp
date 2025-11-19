@@ -1,10 +1,77 @@
 'use client';
 
 import Link from "next/link";
-import { useUser } from "@auth0/nextjs-auth0/client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Navbar() {
-  const { user, isLoading } = useUser();
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/auth/me", {
+        credentials: "include"
+      });
+      
+      console.log("Auth check response:", res.status);
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log("User authenticated:", data);
+        setUser(data);
+      } else {
+        console.log("Not authenticated, clearing user");
+        setUser(null);
+        document.cookie = "session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      }
+    } catch (error) {
+      console.error("Auth check failed:", error);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const handleLogin = () => {
+    window.location.href = "http://localhost:8000/api/v1/auth/login";
+  };
+
+  const handleLogout = async () => {
+    try {
+      console.log("Starting logout...");
+      
+      const res = await fetch("http://localhost:8000/api/v1/auth/logout", {
+        method: "GET",
+        credentials: "include"
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Logout successful");
+        
+        setUser(null);
+        
+        if (data.logout_url) {
+            window.location.href = data.logout_url;
+        } else {
+            window.location.href = "/";
+        }
+      } else {
+        console.error("Logout failed:", res.status);
+        setUser(null);
+        window.location.href = "/";
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+      setUser(null);
+    }
+  };
 
   return (
     <nav className="bg-white dark:bg-slate-900 shadow-sm">
@@ -22,29 +89,23 @@ export default function Navbar() {
             ) : user ? (
               <>
                 <span className="text-sm text-slate-700 dark:text-slate-300">
-                  {user.name}
+                  {user.name || user.email}
                 </span>
-                <a
-                  href="/auth/logout"
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700"
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 transition"
                 >
                   Sign Out
-                </a>
+                </button>
               </>
             ) : (
               <>
-                <a
-                  href="/auth/login"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+                <button
+                  onClick={handleLogin}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition"
                 >
                   Sign In
-                </a>
-                <a
-                  href="/auth/login?screen_hint=signup"
-                  className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  Sign Up
-                </a>
+                </button>
               </>
             )}
           </div>

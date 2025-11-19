@@ -1,7 +1,7 @@
 import httpx
+import logging
 from fastapi import Request, Response, HTTPException
 from typing import Optional, Dict
-import logging
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,6 @@ class ServiceProxy:
         service_url = self.services[service_name]
         url = f"{service_url}{path}"
         
-        # Filter headers (remove host, etc.)
         filtered_headers = self._filter_headers(headers or {})
         
         logger.info(f"Proxying {method} request to {service_name}: {url}")
@@ -51,16 +50,27 @@ class ServiceProxy:
                     headers=filtered_headers,
                     content=body,
                     params=params,
-                    follow_redirects=True
+                    follow_redirects=False
                 )
                 
-                # Return response with original status code
-                return Response(
+                logger.info(f"Response status: {response.status_code}")
+                
+                # Tworzymy obiekt Response ręcznie, aby poprawnie obsłużyć nagłówki
+                proxy_response = Response(
                     content=response.content,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
                     media_type=response.headers.get("content-type")
                 )
+                
+                excluded_headers = {"content-length", "content-type", "transfer-encoding", "connection", "host"}
+                
+                for key, value in response.headers.multi_items():
+                    if key.lower() not in excluded_headers:
+                        proxy_response.headers.append(key, value)
+                        if key.lower() == "set-cookie":
+                            logger.info(f"Forwarding Set-Cookie: {value}")
+
+                return proxy_response
                 
         except httpx.TimeoutException:
             logger.error(f"Timeout while connecting to {service_name} service")
@@ -89,7 +99,6 @@ class ServiceProxy:
     
     def _filter_headers(self, headers: Dict) -> Dict:
         """Filter out headers that shouldn't be forwarded"""
-        # Headers to exclude
         excluded_headers = {
             "host",
             "content-length",
@@ -105,5 +114,4 @@ class ServiceProxy:
             if key.lower() not in excluded_headers
         }
 
-# Global proxy instance
 proxy = ServiceProxy()

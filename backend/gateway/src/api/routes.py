@@ -16,40 +16,52 @@ async def get_services():
     }
 
 # Auth Service Proxy Routes
-@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@router.api_route("/auth/{path:path}", methods = ["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_auth(path: str, request: Request):
     """Proxy all requests to auth service"""
     return await proxy.forward_request(
-        service_name="auth",
-        path=f"/{path}",
-        method=request.method,
-        headers=dict(request.headers),
-        body=await request.body(),
-        params=dict(request.query_params)
+        service_name = "auth",
+        path = f"/auth/{path}",
+        method = request.method,
+        headers = dict(request.headers),
+        body = await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
+        params = dict(request.query_params)
+    )
+
+@router.api_route("/auth", methods = ["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_auth_root(request: Request):
+    """Proxy requests to auth service root"""
+    return await proxy.forward_request(
+        service_name = "auth",
+        path = "/auth",
+        method = request.method,
+        headers = dict(request.headers),
+        body = await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
+        params = dict(request.query_params)
     )
 
 # User Service Proxy Routes
-@router.api_route("/users/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@router.api_route("/users/{path:path}", methods = ["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_users(path: str, request: Request):
     """Proxy all requests to user service"""
     return await proxy.forward_request(
-        service_name="user",
-        path=f"/users/{path}",
-        method=request.method,
-        headers=dict(request.headers),
-        body=await request.body(),
-        params=dict(request.query_params)
+        service_name = "user",
+        path = f"/users/{path}",
+        method = request.method,
+        headers = dict(request.headers),
+        body = await request.body(),
+        params = dict(request.query_params)
     )
 
-@router.api_route("/users", methods=["GET", "POST"])
+@router.api_route("/users", methods = ["GET", "POST"])
 async def proxy_users_root(request: Request):
     """Proxy requests to user service root"""
     return await proxy.forward_request(
-        service_name="user",
-        path="/users",
-        method=request.method,
-        headers=dict(request.headers),
-        body=await request.body(),
-        params=dict(request.query_params)
+        service_name = "user",
+        path = "/users",
+        method = request.method,
+        headers = dict(request.headers),
+        body = await request.body(),
+        params = dict(request.query_params)
     )
 

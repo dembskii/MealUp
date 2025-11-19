@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     
     # Service URLs
-    AUTH_SERVICE_URL: str = "http://localhost:8001"
-    USER_SERVICE_URL: str = "http://localhost:8002"
+    AUTH_SERVICE_URL: str
+    USER_SERVICE_URL: str
     
     # Timeout settings (in seconds)
     REQUEST_TIMEOUT: float = 30.0
