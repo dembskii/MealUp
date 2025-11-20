@@ -3,7 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
 from src.core.config import settings
 from src.middleware.logging import RequestLoggingMiddleware
+from contextlib import asynccontextmanager
+from src.services.redis_service import redis_service
 import logging
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await redis_service.connect()
+    yield
+    await redis_service.close()
+
+
 
 logging.basicConfig(
     level = logging.INFO,
@@ -13,7 +24,8 @@ logging.basicConfig(
 app = FastAPI(
     title = settings.PROJECT_NAME,
     version = settings.VERSION,
-    description = "API Gateway for microservices with proxy support"
+    description = "API Gateway for microservices with proxy support",
+    lifespan = lifespan
 )
 
 # Add logging middleware

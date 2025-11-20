@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     
+    # Redis Configuration
+    AUTH_REDIS_PASSWORD: str
+    REDIS_AUTH_URL: str
+
     # Service URLs
     AUTH_SERVICE_URL: str
     USER_SERVICE_URL: str

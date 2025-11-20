@@ -25,7 +25,8 @@ class Auth0Manager:
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
             "scope": "openid profile email",
-            "state": state
+            "state": state,
+            "audience": settings.AUTH0_AUDIENCE 
         }
         
         if prompt == "signup":
