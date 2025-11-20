@@ -42,6 +42,10 @@ export default function Navbar() {
     window.location.href = "http://localhost:8000/api/v1/auth/login";
   };
 
+  const handleSignUp = () => {
+    window.location.href = "http://localhost:8000/api/v1/auth/login?prompt=signup";
+  };
+
   const handleLogout = async () => {
     try {
       console.log("Starting logout...");
@@ -105,6 +109,12 @@ export default function Navbar() {
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition"
                 >
                   Sign In
+                </button>
+                <button
+                  onClick={handleSignUp}
+                  className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded hover:bg-blue-50 dark:text-blue-400 dark:border-blue-400 dark:hover:bg-slate-800 transition"
+                >
+                  Sign Up
                 </button>
               </>
             )}

@@ -3,6 +3,8 @@ import json
 from src.core.config import settings
 from typing import Dict, Optional
 import logging
+from urllib.parse import urlencode
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ class Auth0Manager:
         self.redirect_uri = settings.AUTH0_REDIRECT_URI
     
 
-    def get_authorization_url(self, state: str) -> str:
+    def get_authorization_url(self, state: str, prompt: str = None) -> str:
         """Generate Auth0 authorization URL"""
         params = {
             "client_id": self.client_id,
@@ -26,8 +28,12 @@ class Auth0Manager:
             "state": state
         }
         
-        query_string = "&".join(f"{k}={v}" for k, v in params.items())
-        return f"https://{self.domain}/authorize?{query_string}"
+        if prompt == "signup":
+            params["screen_hint"] = "signup"
+        elif prompt:
+            params['prompt'] = prompt
+        
+        return f"https://{self.domain}/authorize?{urlencode(params)}"
     
 
     async def exchange_code_for_token(self, code: str) -> Optional[Dict]:

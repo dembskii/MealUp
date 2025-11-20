@@ -12,17 +12,21 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.get("/login")
 @router.post("/login")
-async def login(response: Response, request: Request):
-    """Initiate OAuth2 login flow"""
+async def login(response: Response, request: Request, prompt: str = None):
+    """Initiate OAuth2 login/signup flow"""
     try:
+        if not prompt:
+            prompt = request.query_params.get("prompt")
+        
         state = str(uuid.uuid4())
-        auth_url = auth0_manager.get_authorization_url(state)
+        auth_url = auth0_manager.get_authorization_url(state, prompt = prompt)
         
         await redis_service.client.setex(f"auth_state:{state}", 600, "pending")
         
-        logger.info(f"Initiating login with state {state}")
+        logger.info(f"Initiating login with state {state}, prompt={prompt}")
         return RedirectResponse(url=auth_url)
         
     except Exception as e:
