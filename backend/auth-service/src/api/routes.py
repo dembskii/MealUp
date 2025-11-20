@@ -27,11 +27,11 @@ async def login(response: Response, request: Request, prompt: str = None):
         await redis_service.client.setex(f"auth_state:{state}", 600, "pending")
         
         logger.info(f"Initiating login with state {state}, prompt={prompt}")
-        return RedirectResponse(url=auth_url)
+        return RedirectResponse(url = auth_url)
         
     except Exception as e:
         logger.error(f"Error in login: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Login failed")
+        raise HTTPException(status_code = 500, detail = "Login failed")
 
 
 @router.get("/callback")
@@ -42,24 +42,24 @@ async def callback(code: str, state: str):
         stored_state = await redis_service.client.get(f"auth_state:{state}")
         if not stored_state:
             logger.error(f"Invalid state: {state}")
-            raise HTTPException(status_code=400, detail="Invalid state parameter")
+            raise HTTPException(status_code = 400, detail = "Invalid state parameter")
         
         tokens = await auth0_manager.exchange_code_for_token(code)
         if not tokens:
             logger.error("Failed to exchange code for tokens")
-            raise HTTPException(status_code=500, detail="Token exchange failed")
+            raise HTTPException(status_code = 500, detail = "Token exchange failed")
         
         user_info = await auth0_manager.get_user_info(tokens.get("access_token"))
         if not user_info:
             logger.error("Failed to get user info")
-            raise HTTPException(status_code=500, detail="Failed to get user info")
+            raise HTTPException(status_code = 500, detail="Failed to get user info")
         
         session_id = await TokenService.create_session(tokens, user_info)
         if not session_id:
             logger.error("Failed to create session")
-            raise HTTPException(status_code=500, detail="Session creation failed")
+            raise HTTPException(status_code = 500, detail="Session creation failed")
         
-        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
+        response = RedirectResponse(url = f"{settings.FRONTEND_URL}/")
         
         response.set_cookie(
             key="session_id",
@@ -78,7 +78,7 @@ async def callback(code: str, state: str):
         raise
     except Exception as e:
         logger.error(f"Error in callback: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Callback processing failed")
+        raise HTTPException(status_code = 500, detail="Callback processing failed")
 
 
 @router.get("/me")
@@ -90,14 +90,14 @@ async def get_current_user(response: Response, session_id: str = Cookie(None)):
 
     try:
         if not session_id:
-            raise HTTPException(status_code=401, detail="No session")
+            raise HTTPException(status_code = 401, detail = "No session")
         
         user = await TokenService.get_user_from_session(session_id)
         
         if not user:
             logger.warning(f"Invalid or expired session: {session_id}")
             response.delete_cookie(key="session_id", path="/")
-            raise HTTPException(status_code=401, detail="Invalid or expired session")
+            raise HTTPException(status_code = 401, detail = "Invalid or expired session")
         
         return user
         
@@ -105,7 +105,7 @@ async def get_current_user(response: Response, session_id: str = Cookie(None)):
         raise
     except Exception as e:
         logger.error(f"Error in get_current_user: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get user")
+        raise HTTPException(status_code = 500, detail = "Failed to get user")
 
 
 @router.get("/logout")
@@ -128,18 +128,45 @@ async def logout(response: Response, session_id: str = Cookie(None)):
             "logout_url": auth0_logout_url
         }
         
-        response = JSONResponse(content=content, status_code=200)
+        response = JSONResponse(content = content, status_code = 200)
         
         response.delete_cookie(
-            key="session_id",
-            path="/",
-            httponly=True,
-            secure=False,
-            samesite="lax"
+            key = "session_id",
+            path = "/",
+            httponly = True,
+            secure = False,
+            samesite = "lax"
         )
         
         return response
         
     except Exception as e:
         logger.error(f"Error in logout: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
+        raise HTTPException(status_code = 500, detail = f"Logout failed: {str(e)}")
+    
+
+@router.post("/refresh")
+async def refresh_token(response: Response, session_id: str = Cookie(None)):
+    try:
+        if not session_id:
+            raise HTTPException(status_code = 401, detail = "No session")
+
+        new_access_token = await TokenService.refresh_access_token_for_session(session_id)
+        
+        if not new_access_token:
+            response.delete_cookie(
+                key = "session_id",
+                path = "/",
+                httponly = True,
+                secure = False,
+                samesite = "lax"
+            )
+            raise HTTPException(status_code = 401, detail = "Could not refresh token, please login again")
+            
+        return {"message": "Token refreshed successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in refresh_token: {str(e)}", exc_info = True)
+        raise HTTPException(status_code = 500, detail = "Token refresh failed")

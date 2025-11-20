@@ -24,7 +24,7 @@ class Auth0Manager:
             "client_id": self.client_id,
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
-            "scope": "openid profile email",
+            "scope": "openid profile email offline_access",
             "state": state,
             "audience": settings.AUTH0_AUDIENCE 
         }
