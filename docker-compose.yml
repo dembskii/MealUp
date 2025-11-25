@@ -19,15 +19,6 @@ services:
       - REQUEST_TIMEOUT=30.0
       - CONNECT_TIMEOUT=5.0
       - MAX_RETRIES=3
-    # depends_on:
-      # - auth-service
-      # - user-service
-      # - recipe-service
-      # - workout-service
-      # - payment-service
-      # - analytics-service
-      # - forum-service
-      # - notification-service
     networks:
       - mealup-network
 
@@ -56,7 +47,7 @@ services:
     image: redis:7-alpine
     command: redis-server --requirepass ${AUTH_REDIS_PASSWORD} --appendonly yes
     ports:
-      - "6379:6379" 
+      - "6379:6379"
     volumes:
       - auth-redis-data:/data
     networks:
@@ -67,27 +58,15 @@ services:
       timeout: 3s
       retries: 5
 
-  # User Service + PostgreSQL
-  user-service:
-    build: ./backend/user-service
-    ports:
-      - "8002:8002"
-    environment:
-      - USER_DATABASE_URL=${USER_DATABASE_URL}
-    depends_on:
-      user-db:
-        condition: service_healthy
-    networks:
-      - mealup-network
-
-  user-db:
+  shared-postgres-db:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_USER_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_USER_DB}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=${POSTGRES_USER_DB},${POSTGRES_PAYMENT_DB},${POSTGRES_FORUM_DB}
     volumes:
-      - user-db-data:/var/lib/postgresql/data
+      - shared-postgres-data:/var/lib/postgresql/data
+      - ./init-postgres.sh:/docker-entrypoint-initdb.d/init-databases.sh
     networks:
       - mealup-network
     healthcheck:
@@ -96,63 +75,20 @@ services:
       timeout: 3s
       retries: 5
 
-  # Recipe Service + MongoDB
-  recipe-service:
-    build: ./backend/recipe-service
+  # User Service
+  user-service:
+    build: ./backend/user-service
     ports:
-      - "8003:8003"
+      - "8002:8002"
     environment:
-      - MONGODB_URL=${RECIPE_MONGODB_URL}
+      - USER_DATABASE_URL=${USER_DATABASE_URL}
     depends_on:
-      recipe-mongo:
+      shared-postgres-db:
         condition: service_healthy
     networks:
       - mealup-network
 
-  recipe-mongo:
-    image: mongo:7
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${RECIPE_MONGO_USER}
-      - MONGO_INITDB_ROOT_PASSWORD=${RECIPE_MONGO_PASSWORD}
-    volumes:
-      - recipe-mongo-data:/data/db
-    networks:
-      - mealup-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Workout Service + MongoDB
-  workout-service:
-    build: ./backend/workout-service
-    ports:
-      - "8004:8004"
-    environment:
-      - MONGODB_URL=${WORKOUT_MONGODB_URL}
-    depends_on:
-      workout-mongo:
-        condition: service_healthy
-    networks:
-      - mealup-network
-
-  workout-mongo:
-    image: mongo:7
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${WORKOUT_MONGO_USER}
-      - MONGO_INITDB_ROOT_PASSWORD=${WORKOUT_MONGO_PASSWORD}
-    volumes:
-      - workout-mongo-data:/data/db
-    networks:
-      - mealup-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Payment Service + PostgreSQL
+  # Payment Service
   payment-service:
     build: ./backend/payment-service
     ports:
@@ -160,47 +96,33 @@ services:
     environment:
       - PAYMENT_DATABASE_URL=${PAYMENT_DATABASE_URL}
     depends_on:
-      payment-db:
+      shared-postgres-db:
         condition: service_healthy
     networks:
       - mealup-network
 
-  payment-db:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_USER=${POSTGRES_PAYMENT}
-      - POSTGRES_PASSWORD=${POSTGRES_PAYMENT_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_PAYMENT_DB}
-    volumes:
-      - payment-db-data:/var/lib/postgresql/data
-    networks:
-      - mealup-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_PAYMENT}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Analytics Service + MongoDB
-  analytics-service:
-    build: ./backend/analytics-service
+  # Forum Service
+  forum-service:
+    build: ./backend/forum-service
     ports:
-      - "8006:8006"
+      - "8007:8007"
     environment:
-      - MONGODB_URL=${ANALYTICS_MONGODB_URL}
+      - FORUM_DATABASE_URL=${FORUM_DATABASE_URL}
     depends_on:
-      analytics-mongo:
+      shared-postgres-db:
         condition: service_healthy
     networks:
       - mealup-network
 
-  analytics-mongo:
+
+
+  shared-mongo-db:
     image: mongo:7
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${ANALYTICS_MONGO_USER}
-      - MONGO_INITDB_ROOT_PASSWORD=${ANALYTICS_MONGO_PASSWORD}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
     volumes:
-      - analytics-mongo-data:/data/db
+      - shared-mongo-data:/data/db
     networks:
       - mealup-network
     healthcheck:
@@ -209,34 +131,44 @@ services:
       timeout: 3s
       retries: 5
 
-  # Forum Service + PostgreSQL
-  forum-service:
-    build: ./backend/forum-service
+  # Recipe Service
+  recipe-service:
+    build: ./backend/recipe-service
     ports:
-      - "8007:8007"
+      - "8003:8003"
     environment:
-      - FORUM_DATABASE_URL=${FORUM_DATABASE_URL}
+      - MONGODB_URL=${RECIPE_MONGODB_URL}
     depends_on:
-      forum-db:
+      shared-mongo-db:
         condition: service_healthy
     networks:
       - mealup-network
 
-  forum-db:
-    image: postgres:16-alpine
+  # Workout Service
+  workout-service:
+    build: ./backend/workout-service
+    ports:
+      - "8004:8004"
     environment:
-      - POSTGRES_USER=${POSTGRES_FORUM}
-      - POSTGRES_PASSWORD=${POSTGRES_FORUM_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_FORUM_DB}
-    volumes:
-      - forum-db-data:/var/lib/postgresql/data
+      - MONGODB_URL=${WORKOUT_MONGODB_URL}
+    depends_on:
+      shared-mongo-db:
+        condition: service_healthy
     networks:
       - mealup-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_FORUM}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+
+  # Analytics Service
+  analytics-service:
+    build: ./backend/analytics-service
+    ports:
+      - "8006:8006"
+    environment:
+      - MONGODB_URL=${ANALYTICS_MONGODB_URL}
+    depends_on:
+      shared-mongo-db:
+        condition: service_healthy
+    networks:
+      - mealup-network
 
   # Notification Service + Redis
   notification-service:
@@ -270,10 +202,6 @@ networks:
 
 volumes:
   auth-redis-data:
-  user-db-data:
-  recipe-mongo-data:
-  workout-mongo-data:
-  payment-db-data:
-  analytics-mongo-data:
-  forum-db-data:
+  shared-postgres-data:
+  shared-mongo-data:
   notification-redis-data:
