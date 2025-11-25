@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
+from pathlib import Path
 import os
 
 class Settings(BaseSettings):
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     REDIS_AUTH_URL: str
     
     class Config:
-        env_file = ".env"
+        env_file = ".env.local" if Path(".env.local").exists() else ".env"
         case_sensitive = True
 
 settings = Settings()
