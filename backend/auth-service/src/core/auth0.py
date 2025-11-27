@@ -16,8 +16,8 @@ class Auth0Manager:
         self.client_id = settings.AUTH0_CLIENT_ID
         self.client_secret = settings.AUTH0_CLIENT_SECRET
         self.redirect_uri = settings.AUTH0_REDIRECT_URI
-    
 
+        
     def get_authorization_url(self, state: str, prompt: str = None) -> str:
         """Generate Auth0 authorization URL"""
         params = {
