@@ -93,6 +93,8 @@ class UserService:
     @staticmethod
     async def update_user(session: AsyncSession, uid: UUID, user_data: dict) -> Optional[User]:
         """Update user"""
+        PROTECTED_FIELDS = {"email", "auth0_sub", "uid", "created_at"}
+        
         try:
             statement = select(User).where(User.uid == uid)
             result = await session.exec(statement)
@@ -102,6 +104,8 @@ class UserService:
                 return None
             
             for key, value in user_data.items():
+                if key in PROTECTED_FIELDS:
+                    continue
                 if value is not None and hasattr(user, key):
                     setattr(user, key, value)
             

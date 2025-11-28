@@ -63,12 +63,12 @@ async def proxy_auth_root(request: Request):
 
 
 # User Service Proxy Routes
-@router.api_route("/users/{path:path}", methods = ["GET", "POST", "PUT", "DELETE", "PATCH"])
+@router.api_route("/user/{path:path}", methods = ["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_users(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
     """Proxy all requests to user service"""
     return await proxy.forward_request(
         service_name = "user",
-        path = f"/users/{path}",
+        path = f"/user/{path}",
         method = request.method,
         headers = headers,
         body = await request.body(),
@@ -76,12 +76,12 @@ async def proxy_users(path: str, request: Request, headers: Dict = Depends(get_a
     )
 
 
-@router.api_route("/users", methods = ["GET", "POST"])
+@router.api_route("/user", methods = ["GET", "POST"])
 async def proxy_users_root(request: Request, headers: Dict = Depends(get_auth_headers)):
     """Proxy requests to user service root"""
     return await proxy.forward_request(
         service_name = "user",
-        path = "/users",
+        path = "/user",
         method = request.method,
         headers = headers,
         body = await request.body(),
