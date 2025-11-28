@@ -35,11 +35,14 @@ services:
       - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
       - AUTH0_REDIRECT_URI=http://localhost:8000/api/v1/auth/callback
       - FRONTEND_URL=http://localhost:3000
+      - USER_SERVICE_URL=http://user-service:8002
       - ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8000"]
       - REDIS_AUTH_URL=${REDIS_AUTH_URL}
     depends_on:
       auth-redis:
         condition: service_healthy
+      user-service:
+        condition: service_started 
     networks:
       - mealup-network
 

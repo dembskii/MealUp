@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     
     # Frontend
     FRONTEND_URL: str
+
+    #User-service
+    USER_SERVICE_URL: str
     
     class Config:
         env_file = ".env"
