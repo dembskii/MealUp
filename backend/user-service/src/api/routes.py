@@ -88,6 +88,37 @@ async def create_user(
 
 
 
+@router.post("/sync", response_model=UserResponse)
+async def sync_user_from_auth(
+    user_data: dict, 
+    session: AsyncSession = Depends(get_session)
+):
+    """Sync user from Auth Service after Auth0 login"""
+    try:
+        auth0_sub = user_data.get("sub") or user_data.get("auth0_sub")
+        
+        if not auth0_sub:
+            logger.error(f"Missing auth0_sub in user_data: {user_data}")
+            raise HTTPException(status_code=400, detail="Missing auth0_sub (sub)")
+        
+        user = await UserService.get_or_create_user(
+            session,
+            auth0_sub,
+            user_data
+        )
+        
+        logger.info(f"Synced user: {user.email} (auth0_sub: {auth0_sub})")
+        return user
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing user: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 @router.put("/users/{uid}", response_model = UserResponse)
 async def update_user(
     uid: UUID,

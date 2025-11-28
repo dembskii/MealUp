@@ -32,7 +32,7 @@ class UserResponse(BaseModel):
     date_of_birth: Optional[date] = Field(examples = ["02.02.2025"], description = "User's date of birth", default = None)
     role: str = Field(examples = ["user"], description = "User's role")
     created_at: datetime = Field(description = "Creation timestamp")
-    updated_at: datetime = Field(description = "Update timestamp")
+    update_at: datetime = Field(description = "Update timestamp")
     
     class Config:
         from_attributes = True

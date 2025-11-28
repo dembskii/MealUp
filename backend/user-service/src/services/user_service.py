@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 class UserService:
     """Service for managing users and Auth0 integration"""
     
-
     @staticmethod
     async def get_or_create_user(
         session: AsyncSession,
@@ -22,7 +21,7 @@ class UserService:
         try:
             statement = select(User).where(User.auth0_sub == auth0_sub)
             result = await session.exec(statement)
-            existing_user = result.scalars().first()
+            existing_user = result.first()
             
             if existing_user:
                 existing_user.email = user_data.get("email", existing_user.email)
@@ -36,12 +35,12 @@ class UserService:
             
             username = user_data.get("email", "").split("@")[0]
             new_user = User(
-                auth0_sub = auth0_sub,
-                email = user_data.get("email"),
-                username = username,
-                first_name = user_data.get("given_name", "First Name"),
-                last_name = user_data.get("family_name", "Last Name"),
-                role = UserRole.USER
+                auth0_sub=auth0_sub,
+                email=user_data.get("email"),
+                username=username,
+                first_name=user_data.get("given_name", "First Name"),
+                last_name=user_data.get("family_name", "Last Name"),
+                role=UserRole.USER
             )
             session.add(new_user)
             await session.commit()
@@ -55,18 +54,16 @@ class UserService:
             raise
 
 
-
     @staticmethod
     async def get_user_by_auth0_sub(session: AsyncSession, auth0_sub: str) -> Optional[User]:
         """Get user by Auth0 sub"""
         try:
             statement = select(User).where(User.auth0_sub == auth0_sub)
             result = await session.exec(statement)
-            return result.scalars().first()
+            return result.first()
         except Exception as e:
             logger.error(f"Error getting user by auth0_sub: {str(e)}")
             return None
-
 
 
     @staticmethod
@@ -75,11 +72,10 @@ class UserService:
         try:
             statement = select(User).where(User.uid == uid)
             result = await session.exec(statement)
-            return result.scalars().first()
+            return result.first()
         except Exception as e:
             logger.error(f"Error getting user by uid: {str(e)}")
             return None
-
 
 
     @staticmethod
@@ -88,11 +84,10 @@ class UserService:
         try:
             statement = select(User).offset(skip).limit(limit)
             result = await session.exec(statement)
-            return result.scalars().all()
+            return result.all()
         except Exception as e:
             logger.error(f"Error getting all users: {str(e)}")
             return []
-
 
 
     @staticmethod
@@ -101,7 +96,7 @@ class UserService:
         try:
             statement = select(User).where(User.uid == uid)
             result = await session.exec(statement)
-            user = result.scalars().first()
+            user = result.first()
             
             if not user:
                 return None
@@ -121,14 +116,13 @@ class UserService:
             return None
 
 
-
     @staticmethod
     async def delete_user(session: AsyncSession, uid: UUID) -> bool:
         """Delete user"""
         try:
             statement = select(User).where(User.uid == uid)
             result = await session.exec(statement)
-            user = result.scalars().first()
+            user = result.first()
             
             if not user:
                 return False

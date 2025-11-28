@@ -7,10 +7,42 @@ from src.core.auth0 import auth0_manager
 from src.services.redis_service import redis_service
 from src.services.token_service import TokenService
 from src.core.config import settings
+import httpx
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+
+async def sync_user_with_user_service(user_info: dict) -> dict | None:
+    """Sync user with User Service after Auth0 login"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{settings.USER_SERVICE_URL}/user/sync",
+                json={
+                    "sub": user_info.get("sub"),
+                    "email": user_info.get("email"),
+                    "given_name": user_info.get("given_name", ""),
+                    "family_name": user_info.get("family_name", "")
+                }
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"User synced: {user_info.get('email')}")
+                return response.json()
+            else:
+                logger.warning(f"User sync failed: {response.status_code} - {response.text}")
+                return None
+                
+    except httpx.ConnectError:
+        logger.error("Cannot connect to User Service")
+        return None
+    except Exception as e:
+        logger.error(f"Error syncing user: {str(e)}")
+        return None
+
 
 
 @router.get("/login")
@@ -54,6 +86,16 @@ async def callback(code: str, state: str):
             logger.error("Failed to get user info")
             raise HTTPException(status_code = 500, detail="Failed to get user info")
         
+
+        #-----User-service sync-----
+        synced_user = await sync_user_with_user_service(user_info)
+        if synced_user:
+            logger.info(f"User synced with User Service: {synced_user.get('uid')}")
+            user_info["internal_uid"] = str(synced_user.get("uid"))
+        else:
+            logger.warning("User sync failed, continuing without internal user")
+        #---------------------------
+
         session_id = await TokenService.create_session(tokens, user_info)
         if not session_id:
             logger.error("Failed to create session")

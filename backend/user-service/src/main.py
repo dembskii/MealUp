@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.models.model import User
 from sqlmodel import SQLModel
+from src.api.routes import router
 import logging
 
 logging.basicConfig(
@@ -39,13 +40,19 @@ app.add_middleware(
 )
 
 
-# Include routers
-#app.include_router(router, prefix="/user")
+
+app.include_router(router, prefix="/user")
 
 
 @app.get("/")
 async def root():
     return {"message": "User Service is running", "version": settings.VERSION}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker"""
+    return {"status": "healthy", "service": "user-service"}
 
 
 if __name__ == "__main__":
