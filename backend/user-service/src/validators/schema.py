@@ -1,8 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
-
 
 
 
@@ -28,6 +27,9 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(max_length = 50, examples = ["John"], description = "User's first name", default = None)
     last_name: Optional[str] = Field(max_length = 50, examples = ["Doe"], description = "User's last name", default = None)
     date_of_birth: Optional[date] = Field(examples = ["02.02.2025"], description = "User's date of birth", default = None)
+    sex: Optional[str] = Field(examples = ["male"], description = "User's sex", default = None)
+    age: Optional[int] = Field(examples = [22], description = "User's age", default = None)
+    body_params: Optional[BodyParamsSchema] = Field(description = "User's body parameters", default = None)
     username: Optional[str] = Field(max_length = 40, examples = ["JohnnyHunter"], description = "User's username", default = None)
 
 
@@ -41,8 +43,10 @@ class UserResponse(BaseModel):
     last_name: str = Field(max_length = 50, examples = ["Doe"], description = "User's last name")
     date_of_birth: Optional[date] = Field(examples = ["02.02.2025"], description = "User's date of birth", default = None)
     role: str = Field(examples = ["user"], description = "User's role")
-    sex: str = Field(examples = ["male"], description = "User's sex", default = None)
+    sex: Optional[str] = Field(examples = ["male"], description = "User's sex", default = None)
+    age: Optional[int] = Field(examples = [22], description = "User's age", default = None)
     body_params: Optional[BodyParamsSchema] = Field(description = "User's body parameters", default = None)
+    recipe_ids: Optional[List[str]] = Field(default=None, description="List of recipe IDs")
     created_at: datetime = Field(description = "Creation timestamp")
     update_at: datetime = Field(description = "Update timestamp")
     

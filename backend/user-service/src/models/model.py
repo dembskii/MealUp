@@ -95,10 +95,20 @@ class User(SQLModel, table = True):
         default = None,
         description = "User sex"
     )
+    age: Optional[int] = Field(
+        sa_column = Column(pg.INTEGER, nullable = True),
+        default = None,
+        description = "User age"
+    )
     body_params: Optional[BodyParams] = Field(
         sa_column = Column(pg.JSON, nullable = True),
         default = None,
-        description = "User body parameters"
+        description = "User's body parameters"
+    )
+    recipe_ids: Optional[List[str]] = Field(
+        sa_column = Column(pg.JSON, nullable = True),
+        default = None,
+        description = "List of recipe IDs from Recipe Service"
     )
     created_at: datetime = Field(
         sa_column = Column(pg.TIMESTAMP, default = datetime.now),
@@ -108,6 +118,13 @@ class User(SQLModel, table = True):
         sa_column = Column(pg.TIMESTAMP, default = datetime.now, onupdate = datetime.now),
         default_factory = datetime.now
     )
+
+#To be added:
+# Posts
+# PostsLiked
+# CommentsLiked
+# Records
+
 
 
 def __repr__(self):
