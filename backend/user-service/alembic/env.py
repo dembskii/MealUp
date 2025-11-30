@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
 from src.models.model import User
+from src.models.model import BodyParams
 from sqlmodel import SQLModel
 from src.core.config import settings
 import sqlmodel

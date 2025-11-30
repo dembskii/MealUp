@@ -4,6 +4,16 @@ from typing import Optional
 from uuid import UUID
 
 
+
+
+
+class BodyParamsSchema(BaseModel):
+    weight: Optional[float] = Field(gt = 0, default = None, description = "User's weight")
+    weight_unit: str = Field(default = "kg", description = "User's weight units")
+    height: Optional[float] = Field(gt = 0, default = None, description = "User's height")
+    height_unit: str = Field(default = "cm", description = "User's height unit")
+
+
 class UserCreate(BaseModel):
     """Schema for creating a user"""
     email: EmailStr = Field(max_length = 40, examples = ["example@mail.com"], description = "User's email")
@@ -31,6 +41,8 @@ class UserResponse(BaseModel):
     last_name: str = Field(max_length = 50, examples = ["Doe"], description = "User's last name")
     date_of_birth: Optional[date] = Field(examples = ["02.02.2025"], description = "User's date of birth", default = None)
     role: str = Field(examples = ["user"], description = "User's role")
+    sex: str = Field(examples = ["male"], description = "User's sex", default = None)
+    body_params: Optional[BodyParamsSchema] = Field(description = "User's body parameters", default = None)
     created_at: datetime = Field(description = "Creation timestamp")
     update_at: datetime = Field(description = "Update timestamp")
     
