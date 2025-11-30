@@ -7,15 +7,20 @@ from pydantic import EmailStr
 import uuid
 
 
+
+#User Role Enum
 class UserRole(str, Enum):
     USER = "user"
     TRAINER = "trainer"
     ADMIN = "admin"
 
+#User Sex Enum
 class UserSex(str, Enum):
     MALE = "male"
     FEMALE = "female"
 
+
+#Body Params Enum
 class WeightUnit(str, Enum):
     KG = "kg"
     LB = "lb"
@@ -26,13 +31,72 @@ class HeightUnit(str, Enum):
     FT = "ft"
 
 
+#Record Enum
+class TimeOfDay(str, Enum):
+    BREAKFAST = "breakfast"
+    LUNCH = "lunch"
+    DINNER = "dinner"
+    SNACK = "snack"
+
+
+
+class StructRecord(SQLModel):
+    """Individual record of a meal"""
+    recipe_id: str = Field(
+        description = "Recipe ID"
+    )
+    capacity: float = Field(
+        gt = 0,
+        description = "Portion size"
+    )
+    time_of_day: TimeOfDay = Field(
+        description = "Time of consumption"
+    )
+    created_at: datetime = Field(
+        default_factory = datetime.now
+    )
+    updated_at: datetime = Field(
+        default_factory = datetime.now
+    )
+
+
+class DayRecord(SQLModel):
+    """Daily record of consumed meals"""
+    id: uuid.UUID = Field(
+        default_factory = uuid.uuid4
+    )
+    records: List[StructRecord] = Field(
+        default_factory = list,
+        description = "List of meals consumed")
+    total_macro: Optional[dict] = Field(
+        default = None,
+        description = "Aggregated total macros for the day"
+    )
+    created_at: datetime = Field(
+        default_factory = datetime.now
+    )
+    updated_at: datetime = Field(
+        default_factory = datetime.now
+    ) 
+
+
 
 class BodyParams(SQLModel):
     """Body parameters - embedded in User"""
-    weight: Optional[float] = Field(gt=0, default=None)
-    weight_unit: Optional[WeightUnit] = Field(default=WeightUnit.KG)
-    height: Optional[float] = Field(gt=0, default=None)
-    height_unit: Optional[HeightUnit] = Field(default=HeightUnit.CM)
+    weight: Optional[float] = Field(
+        gt = 0, default = None
+    )
+    weight_unit: Optional[WeightUnit] = Field(
+        default = WeightUnit.KG
+    )
+    height: Optional[float] = Field(
+        gt = 0,
+        default = None
+    )
+    height_unit: Optional[HeightUnit] = Field(
+        default = HeightUnit.CM
+    )
+
 
 
 class User(SQLModel, table = True):
@@ -52,7 +116,7 @@ class User(SQLModel, table = True):
             unique = True,
             index = True
         ),
-        description="Unique ID from Auth0 (sub claim)"
+        description = "Unique ID from Auth0 (sub claim)"
     )
     email: EmailStr = Field(
         sa_column = Column(
@@ -61,7 +125,7 @@ class User(SQLModel, table = True):
             unique = True,
             index = True
         ),
-        description="Email address of the user",
+        description = "Email address of the user",
     )
     username: str = Field(
         min_length = 3,
@@ -109,6 +173,11 @@ class User(SQLModel, table = True):
         sa_column = Column(pg.JSON, nullable = True),
         default = None,
         description = "List of recipe IDs from Recipe Service"
+    )
+    meal_records: Optional[List[DayRecord]] = Field(
+        sa_column = Column(pg.JSON, nullable = True),
+        default = None,
+        description = "Daily meal records"
     )
     created_at: datetime = Field(
         sa_column = Column(pg.TIMESTAMP, default = datetime.now),
