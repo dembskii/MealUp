@@ -1,8 +1,8 @@
-"""Initial migration with User model
+"""Added meal_records
 
-Revision ID: dab77d38ae58
+Revision ID: cdafdf5ba103
 Revises: 
-Create Date: 2025-11-25 16:40:04.787585
+Create Date: 2025-11-30 20:55:50.801073
 
 """
 from typing import Sequence, Union
@@ -10,10 +10,10 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-import sqlmodel
+import sqlmodel 
 
 # revision identifiers, used by Alembic.
-revision: str = 'dab77d38ae58'
+revision: str = 'cdafdf5ba103'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -30,6 +30,12 @@ def upgrade() -> None:
     sa.Column('first_name', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('last_name', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
     sa.Column('date_of_birth', sa.DATE(), nullable=True),
+    sa.Column('role', sa.VARCHAR(length=50), nullable=True),
+    sa.Column('sex', sa.VARCHAR(length=50), nullable=True),
+    sa.Column('age', sa.INTEGER(), nullable=True),
+    sa.Column('body_params', postgresql.JSON(astext_type=sa.Text()), nullable=True),
+    sa.Column('recipe_ids', postgresql.JSON(astext_type=sa.Text()), nullable=True),
+    sa.Column('meal_records', postgresql.JSON(astext_type=sa.Text()), nullable=True),
     sa.Column('created_at', postgresql.TIMESTAMP(), nullable=True),
     sa.Column('update_at', postgresql.TIMESTAMP(), nullable=True),
     sa.PrimaryKeyConstraint('uid')
