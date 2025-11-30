@@ -16,6 +16,24 @@ class UserSex(str, Enum):
     MALE = "male"
     FEMALE = "female"
 
+class WeightUnit(str, Enum):
+    KG = "kg"
+    LB = "lb"
+
+class HeightUnit(str, Enum):
+    CM = "cm"
+    M = "m"
+    FT = "ft"
+
+
+
+class BodyParams(SQLModel):
+    """Body parameters - embedded in User"""
+    weight: Optional[float] = Field(gt=0, default=None)
+    weight_unit: Optional[WeightUnit] = Field(default=WeightUnit.KG)
+    height: Optional[float] = Field(gt=0, default=None)
+    height_unit: Optional[HeightUnit] = Field(default=HeightUnit.CM)
+
 
 class User(SQLModel, table = True):
     __tablename__ = "users"
@@ -76,6 +94,11 @@ class User(SQLModel, table = True):
         sa_column = Column(pg.VARCHAR(50), nullable = True),
         default = None,
         description = "User sex"
+    )
+    body_params: Optional[BodyParams] = Field(
+        sa_column = Column(pg.JSON, nullable = True),
+        default = None,
+        description = "User body parameters"
     )
     created_at: datetime = Field(
         sa_column = Column(pg.TIMESTAMP, default = datetime.now),
