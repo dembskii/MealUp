@@ -94,15 +94,19 @@ class UserService:
     async def update_user(session: AsyncSession, uid: UUID, user_data: dict) -> Optional[User]:
         """Update user"""
         PROTECTED_FIELDS = {"email", "auth0_sub", "uid", "created_at"}
-        
+
         try:
             statement = select(User).where(User.uid == uid)
             result = await session.exec(statement)
             user = result.first()
+        except Exception as e:
+            logger.error(f"Database error while fetching user: {str(e)}")
+            return None
+
+        if not user:
+            return None
             
-            if not user:
-                return None
-            
+        try:
             for key, value in user_data.items():
                 if key in PROTECTED_FIELDS:
                     continue
