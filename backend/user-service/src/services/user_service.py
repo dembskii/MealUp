@@ -27,11 +27,19 @@ class UserService:
                 existing_user.email = user_data.get("email", existing_user.email)
                 existing_user.first_name = user_data.get("given_name", existing_user.first_name)
                 existing_user.last_name = user_data.get("family_name", existing_user.last_name)
+                
                 session.add(existing_user)
                 await session.commit()
                 await session.refresh(existing_user)
-                logger.info(f"Updated user: {existing_user.email}")
+                logger.info(f"Updated user: {existing_user.email} (role unchanged: {existing_user.role})")
                 return existing_user
+            
+            role_str = user_data.get("role", "user")
+            try:
+                role = UserRole(role_str)
+            except ValueError:
+                role = UserRole.USER
+                logger.warning(f"Invalid role '{role_str}', defaulting to 'user'")
             
             username = user_data.get("email", "").split("@")[0]
             new_user = User(
@@ -40,12 +48,12 @@ class UserService:
                 username=username,
                 first_name=user_data.get("given_name", "First Name"),
                 last_name=user_data.get("family_name", "Last Name"),
-                role=UserRole.USER
+                role=role
             )
             session.add(new_user)
             await session.commit()
             await session.refresh(new_user)
-            logger.info(f"Created new user: {new_user.email}")
+            logger.info(f"Created new user: {new_user.email} with role: {role}")
             return new_user
             
         except Exception as e:
