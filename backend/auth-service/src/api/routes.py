@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 
-async def sync_user_with_user_service(user_info: dict) -> dict | None:
+async def sync_user_with_user_service(user_info: dict, role: str = "user") -> dict | None:
     """Sync user with User Service after Auth0 login"""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -25,12 +25,13 @@ async def sync_user_with_user_service(user_info: dict) -> dict | None:
                     "sub": user_info.get("sub"),
                     "email": user_info.get("email"),
                     "given_name": user_info.get("given_name", ""),
-                    "family_name": user_info.get("family_name", "")
+                    "family_name": user_info.get("family_name", ""),
+                    "role": role
                 }
             )
             
             if response.status_code == 200:
-                logger.info(f"User synced: {user_info.get('email')}")
+                logger.info(f"User synced: {user_info.get('email')} with role: {role}")
                 return response.json()
             else:
                 logger.warning(f"User sync failed: {response.status_code} - {response.text}")
@@ -47,23 +48,32 @@ async def sync_user_with_user_service(user_info: dict) -> dict | None:
 
 @router.get("/login")
 @router.post("/login")
-async def login(response: Response, request: Request, prompt: str = None):
+async def login(response: Response, request: Request, prompt: str = None, role: str = None):
     """Initiate OAuth2 login/signup flow"""
     try:
         if not prompt:
             prompt = request.query_params.get("prompt")
+        if not role:
+            role = request.query_params.get("role", "user")
+        
+        if role not in ["user", "trainer"]:
+            role = "user"
         
         state = str(uuid.uuid4())
-        auth_url = auth0_manager.get_authorization_url(state, prompt = prompt)
+        auth_url = auth0_manager.get_authorization_url(state, prompt=prompt)
         
-        await redis_service.client.setex(f"auth_state:{state}", 600, "pending")
+        await redis_service.client.setex(
+            f"auth_state:{state}", 
+            600, 
+            role
+        )
         
-        logger.info(f"Initiating login with state {state}, prompt={prompt}")
-        return RedirectResponse(url = auth_url)
+        logger.info(f"Initiating login with state {state}, prompt={prompt}, role={role}")
+        return RedirectResponse(url=auth_url)
         
     except Exception as e:
         logger.error(f"Error in login: {str(e)}", exc_info=True)
-        raise HTTPException(status_code = 500, detail = "Login failed")
+        raise HTTPException(status_code=500, detail="Login failed")
 
 
 @router.get("/callback")
@@ -71,37 +81,46 @@ async def login(response: Response, request: Request, prompt: str = None):
 async def callback(code: str, state: str):
     """Handle OAuth2 callback from Auth0"""
     try:
-        stored_state = await redis_service.client.get(f"auth_state:{state}")
-        if not stored_state:
+        stored_role = await redis_service.client.get(f"auth_state:{state}")
+        
+        if not stored_role:
             logger.error(f"Invalid state: {state}")
-            raise HTTPException(status_code = 400, detail = "Invalid state parameter")
+            raise HTTPException(status_code=400, detail="Invalid state parameter")
+        
+        await redis_service.client.delete(f"auth_state:{state}")
+        
+        role = stored_role if stored_role in ["user", "trainer"] else "user"
+        logger.info(f"Callback received with role: {role}")
         
         tokens = await auth0_manager.exchange_code_for_token(code)
         if not tokens:
             logger.error("Failed to exchange code for tokens")
-            raise HTTPException(status_code = 500, detail = "Token exchange failed")
+            raise HTTPException(status_code=500, detail="Token exchange failed")
         
         user_info = await auth0_manager.get_user_info(tokens.get("access_token"))
         if not user_info:
             logger.error("Failed to get user info")
-            raise HTTPException(status_code = 500, detail="Failed to get user info")
+            raise HTTPException(status_code=500, detail="Failed to get user info")
         
 
         #-----User-service sync-----
-        synced_user = await sync_user_with_user_service(user_info)
+        synced_user = await sync_user_with_user_service(user_info, role)
         if synced_user:
-            logger.info(f"User synced with User Service: {synced_user.get('uid')}")
+            logger.info(f"User synced with User Service: {synced_user.get('uid')} as {synced_user.get('role')}")
             user_info["internal_uid"] = str(synced_user.get("uid"))
+            user_info["role"] = synced_user.get("role", role)
         else:
             logger.warning("User sync failed, continuing without internal user")
-        #---------------------------
+            user_info["role"] = role
+        #------------------------------------
 
+        # Tworzenie sesji z pełnymi danymi
         session_id = await TokenService.create_session(tokens, user_info)
         if not session_id:
             logger.error("Failed to create session")
-            raise HTTPException(status_code = 500, detail="Session creation failed")
+            raise HTTPException(status_code=500, detail="Session creation failed")
         
-        response = RedirectResponse(url = f"{settings.FRONTEND_URL}/")
+        response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
         
         response.set_cookie(
             key="session_id",
@@ -113,14 +132,14 @@ async def callback(code: str, state: str):
             max_age=86400
         )
         
-        logger.info(f"User {user_info.get('email')} logged in, session: {session_id}")
+        logger.info(f"User {user_info.get('email')} logged in as {user_info.get('role')}, session: {session_id}")
         return response
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in callback: {str(e)}", exc_info=True)
-        raise HTTPException(status_code = 500, detail="Callback processing failed")
+        raise HTTPException(status_code=500, detail="Callback processing failed")
 
 
 @router.get("/me")

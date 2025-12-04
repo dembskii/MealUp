@@ -88,7 +88,7 @@ async def create_user(
 
 
 
-@router.post("/sync", response_model=UserResponse)
+@router.post("/sync", response_model = UserResponse)
 async def sync_user_from_auth(
     user_data: dict, 
     session: AsyncSession = Depends(get_session)

@@ -42,8 +42,8 @@ export default function Navbar() {
     window.location.href = "http://localhost:8000/api/v1/auth/login";
   };
 
-  const handleSignUp = () => {
-    window.location.href = "http://localhost:8000/api/v1/auth/login?prompt=signup";
+  const handleSignUp = (role = "user") => {
+    window.location.href = `http://localhost:8000/api/v1/auth/login?prompt=signup&role=${role}`;
   };
 
   const handleLogout = async () => {
@@ -111,10 +111,16 @@ export default function Navbar() {
                   Sign In
                 </button>
                 <button
-                  onClick={handleSignUp}
+                  onClick={() => handleSignUp("user")}
                   className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded hover:bg-blue-50 dark:text-blue-400 dark:border-blue-400 dark:hover:bg-slate-800 transition"
                 >
                   Sign Up
+                </button>
+                <button
+                  onClick={() => handleSignUp("trainer")}
+                  className="px-4 py-2 text-sm font-medium text-green-600 border border-green-600 rounded hover:bg-green-50 dark:text-green-400 dark:border-green-400 dark:hover:bg-slate-800 transition"
+                >
+                  Become Trainer
                 </button>
               </>
             )}

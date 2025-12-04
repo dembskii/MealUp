@@ -26,7 +26,9 @@ class TokenService:
                 "user_id": user_info.get("sub"),
                 "email": user_info.get("email"),
                 "name": user_info.get("name"),
-                "picture": user_info.get("picture")
+                "picture": user_info.get("picture"),
+                "role": user_info.get("role", "user"),
+                "internal_uid": user_info.get("internal_uid")
             }
             
             success = await redis_service.save_session(session_id, session_data)
@@ -54,7 +56,9 @@ class TokenService:
                     "user_id": session.get("user_id"),
                     "email": session.get("email"),
                     "name": session.get("name"),
-                    "picture": session.get("picture")
+                    "picture": session.get("picture"),
+                    "role": session.get("role", "user"),
+                    "internal_uid": session.get("internal_uid")
                 }
             return None
         except Exception as e:
