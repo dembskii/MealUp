@@ -14,7 +14,7 @@ MealUp is a social platform for healthy nutrition, workout planning, and fitness
 ## Current Status
 
 ### ✅ Implemented
-- API Gateway (Port 3000) with microservices proxy
+- API Gateway (Port 8000) with microservices proxy
 - Auth0 integration
 - Session management with Redis
 - Frontend navigation & authentication UI
@@ -38,22 +38,22 @@ MealUp is a social platform for healthy nutrition, workout planning, and fitness
 ## System Architecture
 
 ```
-API Gateway (Port 3000) - Single entry point
-├── Auth Service (Port 3001)
+API Gateway (Port 8000) - Single entry point
+├── Auth Service (Port 8001)
 │   └── Redis (sessions)
-├── User Service (Port 3002)
+├── User Service (Port 8002)
 │   └── PostgreSQL
-├── Recipe Service (Port 3003)
+├── Recipe Service (Port 8003)
 │   └── MongoDB
-├── Workout Service (Port 3004)
+├── Workout Service (Port 8004)
 │   └── MongoDB
-├── Payment Service (Port 3005)
+├── Payment Service (Port 8005)
 │   └── PostgreSQL
-├── Analytics Service (Port 3006)
+├── Analytics Service (Port 8006)
 │   └── MongoDB
-├── Forum Service (Port 3007)
+├── Forum Service (Port 8007)
 │   └── PostgreSQL
-└── Notification Service (Port 3008)
+└── Notification Service (Port 8008)
     └── Redis
 ```
 
@@ -61,21 +61,21 @@ API Gateway (Port 3000) - Single entry point
 
 | Service | Port | Database | Purpose |
 |---------|------|----------|---------|
-| **Auth Service** | 3001 | Redis | User authentication, JWT tokens |
-| **User Service** | 3002 | PostgreSQL | User profiles, preferences |
-| **Recipe Service** | 3003 | MongoDB | Recipes, ingredients, macros |
-| **Workout Service** | 3004 | MongoDB | Training plans, exercises |
-| **Payment Service** | 3005 | PostgreSQL | Stripe integration, transactions |
-| **Analytics Service** | 3006 | MongoDB | Tracking, metrics, logs |
-| **Forum Service** | 3007 | PostgreSQL | Posts, comments, reputation |
-| **Notification Service** | 3008 | Redis | Email, in-app notifications |
+| **Auth Service** | 8001 | Redis | User authentication, JWT tokens |
+| **User Service** | 8002 | PostgreSQL | User profiles, preferences |
+| **Recipe Service** | 8003 | MongoDB | Recipes, ingredients, macros |
+| **Workout Service** | 8004 | MongoDB | Training plans, exercises |
+| **Payment Service** | 8005 | PostgreSQL | Stripe integration, transactions |
+| **Analytics Service** | 8006 | MongoDB | Tracking, metrics, logs |
+| **Forum Service** | 8007 | PostgreSQL | Posts, comments, reputation |
+| **Notification Service** | 8008 | Redis | Email, in-app notifications |
 
 ## Tech Stack
 
 **Frontend**: Next.js, React, TailwindCSS  
 **Backend**: FastAPI (Python), microservices architecture  
 **Databases**: PostgreSQL, MongoDB, Redis  
-**Infrastructure**: Docker, Docker Compose  
+**Infrastructure**: Docker, Docker Compose, CI/CD
 **Auth**: Auth0, JWT  
 
 ## Quick Start
@@ -105,14 +105,14 @@ MealUp/
 │   └── package.json
 ├── backend/
 │   ├── gateway/                  # API Gateway (FastAPI)
-│   ├── auth-service/             # Port 3001
-│   ├── user-service/             # Port 3002
-│   ├── recipe-service/           # Port 3003
-│   ├── workout-service/          # Port 3004
-│   ├── payment-service/          # Port 3005
-│   ├── analytics-service/        # Port 3006
-│   ├── forum-service/            # Port 3007
-│   └── notification-service/     # Port 3008
+│   ├── auth-service/             # Port 8001
+│   ├── user-service/             # Port 8002
+│   ├── recipe-service/           # Port 8003
+│   ├── workout-service/          # Port 8004
+│   ├── payment-service/          # Port 8005
+│   ├── analytics-service/        # Port 8006
+│   ├── forum-service/            # Port 8007
+│   └── notification-service/     # Port 8008
 └── docker-compose.yml
 ```
 
