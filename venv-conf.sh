@@ -29,3 +29,13 @@ pip install --upgrade pip
 pip install -r requirements.txt
 deactivate
 cd ../..
+
+
+echo "📚 Setting up Recipe Service..."
+cd backend/recipe-service
+python3.12 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+cd ../..
