@@ -206,6 +206,25 @@ services:
       timeout: 3s
       retries: 5
 
+  # Frontend - Next.js with hot reload
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api-gateway
+    networks:
+      - mealup-network
+
 networks:
   mealup-network:
     driver: bridge
