@@ -147,7 +147,7 @@ services:
     ports:
       - "8003:8003"
     environment:
-      - MONGODB_URL=${RECIPE_MONGODB_URL}
+      - RECIPE_MONGODB_URL=${RECIPE_MONGODB_URL}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
