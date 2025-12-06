@@ -17,6 +17,7 @@ class ServiceProxy:
         self.services = {
             "auth": settings.AUTH_SERVICE_URL,
             "user": settings.USER_SERVICE_URL,
+            "recipe": settings.RECIPE_SERVICE_URL,
         }
     
     async def forward_request(

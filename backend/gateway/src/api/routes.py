@@ -31,7 +31,8 @@ async def get_status():
 async def get_services():
     return {
         "auth_service": settings.AUTH_SERVICE_URL,
-        "user_service": settings.USER_SERVICE_URL
+        "user_service": settings.USER_SERVICE_URL,
+        "recipe_service": settings.RECIPE_SERVICE_URL,
     }
 
 
@@ -86,5 +87,32 @@ async def proxy_users_root(request: Request, headers: Dict = Depends(get_auth_he
         headers = headers,
         body = await request.body(),
         params = dict(request.query_params)
+    )
+
+
+# Recipe Service Proxy Routes
+@router.api_route("/recipes/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_recipes(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy all requests to recipe service"""
+    return await proxy.forward_request(
+        service_name="recipe",
+        path=f"/recipes/{path}",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+@router.api_route("/recipes", methods=["GET", "POST"])
+async def proxy_recipes_root(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy requests to recipe service root"""
+    return await proxy.forward_request(
+        service_name="recipe",
+        path="/recipes",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
     )
 
