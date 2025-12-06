@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import datetime
-from bson import ObjectId
+import asyncio
 import logging
 
 from src.db.mongodb import get_database
@@ -18,7 +18,7 @@ class RecipeService:
         """Create a new recipe"""
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
-        
+
         recipe = Recipe(
             author_id=author_id,
             ingredients=recipe_data.ingredients,
@@ -26,10 +26,10 @@ class RecipeService:
             time_to_prepare=recipe_data.time_to_prepare,
             images=recipe_data.images
         )
-        
+
         recipe_dict = recipe.model_dump(by_alias=True)
-        await collection.insert_one(recipe_dict)
-        
+        await asyncio.to_thread(collection.insert_one, recipe_dict)
+
         logger.info(f"Created recipe {recipe.id} by author {author_id}")
         return recipe
     
@@ -39,7 +39,7 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        recipe_data = await collection.find_one({"_id": recipe_id})
+        recipe_data: Optional[dict[str, Any]] = await asyncio.to_thread(collection.find_one, {"_id": recipe_id})
         if recipe_data:
             return Recipe(**recipe_data)
         return None
@@ -59,8 +59,8 @@ class RecipeService:
             query["author_id"] = author_id
         
         cursor = collection.find(query).sort("_created_at", -1).skip(skip).limit(limit)
-        recipes = await cursor.to_list(length=limit)
-        
+        recipes: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+
         return [Recipe(**recipe) for recipe in recipes]
     
     @staticmethod
@@ -74,7 +74,10 @@ class RecipeService:
         collection = db[settings.RECIPES_COLLECTION]
         
         # Check if recipe exists and belongs to author
-        existing = await collection.find_one({"_id": recipe_id, "author_id": author_id})
+        existing: Optional[dict[str, Any]] = await asyncio.to_thread(
+            collection.find_one,
+            {"_id": recipe_id, "author_id": author_id}
+        )
         if not existing:
             return None
         
@@ -83,14 +86,20 @@ class RecipeService:
         if update_data:
             update_data["_updated_at"] = datetime.utcnow()
             
-            result = await collection.update_one(
+            result = await asyncio.to_thread(
+                collection.update_one,
                 {"_id": recipe_id},
                 {"$set": update_data}
             )
             
             if result.modified_count > 0:
                 logger.info(f"Updated recipe {recipe_id}")
-                updated_recipe = await collection.find_one({"_id": recipe_id})
+                updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
+                    collection.find_one,
+                    {"_id": recipe_id}
+                )
+                if updated_recipe is None:
+                    return None
                 return Recipe(**updated_recipe)
         
         return Recipe(**existing)
@@ -101,7 +110,7 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await collection.delete_one({"_id": recipe_id, "author_id": author_id})
+        result = await asyncio.to_thread(collection.delete_one, {"_id": recipe_id, "author_id": author_id})
         
         if result.deleted_count > 0:
             logger.info(f"Deleted recipe {recipe_id}")
@@ -114,14 +123,20 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await collection.update_one(
+        result = await asyncio.to_thread(
+            collection.update_one,
             {"_id": recipe_id},
             {"$inc": {"total_likes": 1}}
         )
         
         if result.modified_count > 0:
             logger.info(f"Liked recipe {recipe_id}")
-            updated_recipe = await collection.find_one({"_id": recipe_id})
+            updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
+                collection.find_one,
+                {"_id": recipe_id}
+            )
+            if updated_recipe is None:
+                return None
             return Recipe(**updated_recipe)
         return None
     
@@ -131,13 +146,19 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await collection.update_one(
+        result = await asyncio.to_thread(
+            collection.update_one,
             {"_id": recipe_id, "total_likes": {"$gt": 0}},
             {"$inc": {"total_likes": -1}}
         )
         
         if result.modified_count > 0:
             logger.info(f"Unliked recipe {recipe_id}")
-            updated_recipe = await collection.find_one({"_id": recipe_id})
+            updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
+                collection.find_one,
+                {"_id": recipe_id}
+            )
+            if updated_recipe is None:
+                return None
             return Recipe(**updated_recipe)
         return None
