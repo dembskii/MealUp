@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Service URLs
     AUTH_SERVICE_URL: str
     USER_SERVICE_URL: str
+    RECIPE_SERVICE_URL: str
     
     # Timeout settings (in seconds)
     REQUEST_TIMEOUT: float = 30.0
