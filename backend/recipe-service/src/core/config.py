@@ -16,16 +16,19 @@ class Settings(BaseSettings):
     ]
 
     # MongoDB
-    MONGODB_URL: str
-    MONGODB_DB_NAME: str = "recipe_service"
+    RECIPE_MONGODB_URL: str
+    MONGODB_DB_NAME: str = "recipe_db"
     
     # MongoDB Collections
     RECIPES_COLLECTION: str = "recipes"
     INGREDIENTS_COLLECTION: str = "ingredients"
+    RECIPE_VERSIONS_COLLECTION: str = "recipe_versions"
     
-    # Redis
-    AUTH_REDIS_PASSWORD: str
-    REDIS_AUTH_URL: str
+    # Alias for consistency with mongodb.py
+    @property
+    def MONGODB_URL(self) -> str:
+        return self.RECIPE_MONGODB_URL
+    
     
     class Config:
         env_file = ".env.local" if Path(".env.local").exists() else ".env"

@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from src.core.config import settings
+from src.db.mongodb import connect_to_mongodb, disconnect_from_mongodb
+from src.api.routes import router as recipe_router
 import logging
 
 logging.basicConfig(
@@ -14,9 +16,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"Server is starting...")
+    logger.info("Server is starting...")
+    # Connect to MongoDB
+    await connect_to_mongodb()
     yield
-    print(f"Server has been stopped")
+    # Disconnect from MongoDB
+    await disconnect_from_mongodb()
+    logger.info("Server has been stopped")
 
 
 app = FastAPI(
@@ -38,12 +44,18 @@ app.add_middleware(
 
 
 # Include routers
-#app.include_router(router, prefix="/recipe")
+app.include_router(recipe_router, prefix="/recipes", tags=["Recipes"])
 
 
 @app.get("/")
 async def root():
     return {"message": "Recipe Service is running", "version": settings.VERSION}
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "recipe-service"}
 
 
 if __name__ == "__main__":
