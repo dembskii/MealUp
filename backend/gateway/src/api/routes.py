@@ -1,26 +1,42 @@
+import logging
 from fastapi import APIRouter, Request, Cookie, Depends
 from src.core.config import settings
 from src.core.proxy import proxy
 from typing import Optional, Dict
 from src.services.redis_service import redis_service
 
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter()
 
 
-
-# FOR FURTHER USAGE WHEN IMPLEMENTING OTHER SERVICES,
-# WE WILL USE IT TO MOUNT BEARER TOKEN FOR SECURED ENPOINTS
 async def get_auth_headers(request: Request, session_id: Optional[str] = Cookie(None)) -> Dict:
+    """
+    Extract auth headers from session and prepare headers for downstream services.
+    Adds Authorization header and X-User-Id header if session exists.
+    """
     headers = dict(request.headers)
+    
     if session_id:
-        token = await redis_service.get_token(session_id)
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        pass 
+        session = await redis_service.get_session(session_id)
+        if session:
+            # Add Authorization header with access token
+            logger.info(session)
+            access_token = session.get("access_token")
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+            
+            # Extract user ID from session and add as X-User-Id header
+            # user_info = session.get("user_info") or {}
+            user_id = session.get("internal_uid")
+            
+            if user_id:
+                headers["X-User-Id"] = str(user_id)
+                logger.info(f"Gateway forwarding user_id: {user_id}")
+            # logger.info(f"Gateway forwarding headers: {headers}")
 
     return headers
-
 
 
 @router.get("/status")
@@ -92,26 +108,26 @@ async def proxy_users_root(request: Request, headers: Dict = Depends(get_auth_he
 
 # Recipe Service Proxy Routes
 @router.api_route("/recipes/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy_recipes(path: str, request: Request):
+async def proxy_recipes(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
     """Proxy all requests to recipe service"""
     return await proxy.forward_request(
         service_name="recipe",
         path=f"/recipes/{path}",
         method=request.method,
-        #headers=headers,
+        headers=headers,
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
         params=dict(request.query_params)
     )
 
 
 @router.api_route("/recipes", methods=["GET", "POST"])
-async def proxy_recipes_root(request: Request):
+async def proxy_recipes_root(request: Request, headers: Dict = Depends(get_auth_headers)):
     """Proxy requests to recipe service root"""
     return await proxy.forward_request(
         service_name="recipe",
         path="/recipes",
         method=request.method,
-        #headers=headers,
+        headers=headers,
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
         params=dict(request.query_params)
     )

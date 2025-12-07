@@ -44,5 +44,20 @@ class RedisService:
             logger.error(f"Error retrieving token from Redis: {e}")
             return None
 
+    async def get_session(self, session_id: str) -> Optional[dict]:
+        """Get full session data from Redis"""
+        if not self.redis:
+            logger.warning("Redis client is not initialized")
+            return None
+
+        try:
+            data = await self.redis.get(f"session:{session_id}")
+            if data:
+                return json.loads(data)
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving session from Redis: {e}")
+            return None
+
 
 redis_service = RedisService()
