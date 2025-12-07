@@ -1,9 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { ENDPOINTS } from "../../config/network";
+
+const api = axios.create({
+  baseURL: ENDPOINTS.RECIPES,
+  withCredentials: true,
+});
 
 export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [ingredients, setIngredients] = useState([]);
+  const [loadingIngredients, setLoadingIngredients] = useState(false);
+  const [ingredientError, setIngredientError] = useState(null);
 
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
@@ -12,6 +22,41 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
       return `${hours}h ${minutes}m`;
     }
     return `${minutes} min`;
+  };
+
+  // Fetch ingredients when expanding
+  const handleExpandToggle = async () => {
+    if (!isExpanded && ingredients.length === 0 && recipe.ingredients?.length > 0) {
+      // Need to fetch ingredients
+      setLoadingIngredients(true);
+      setIngredientError(null);
+      
+      try {
+        // Fetch all ingredients and filter by IDs
+        const { data: allIngredients } = await api.get("/ingredients?limit=500");
+        
+        // Create a map for quick lookup
+        const ingredientMap = {};
+        allIngredients.forEach((ing) => {
+          ingredientMap[ing.id || ing._id] = ing;
+        });
+
+        // Enrich recipe ingredients with full data
+        const enrichedIngredients = recipe.ingredients.map((item) => ({
+          ...item,
+          ingredient: ingredientMap[item.ingredient_id] || { name: "Unknown", units: "?" },
+        }));
+
+        setIngredients(enrichedIngredients);
+      } catch (err) {
+        console.error("Error fetching ingredients:", err);
+        setIngredientError("Failed to load ingredients");
+      } finally {
+        setLoadingIngredients(false);
+      }
+    }
+
+    setIsExpanded(!isExpanded);
   };
 
   return (
@@ -26,12 +71,13 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
               • {recipe.ingredients?.length || 0} ingredients
             </span>
           </div>
-          
+
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-blue-600 dark:text-blue-400 text-sm hover:underline"
+            onClick={handleExpandToggle}
+            disabled={loadingIngredients}
+            className="text-blue-600 dark:text-blue-400 text-sm hover:underline disabled:opacity-50"
           >
-            {isExpanded ? "Hide details ▲" : "Show details ▼"}
+            {loadingIngredients ? "Loading..." : isExpanded ? "Hide details ▲" : "Show details ▼"}
           </button>
         </div>
 
@@ -42,7 +88,7 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
           >
             ❤️ {recipe.total_likes || 0}
           </button>
-          
+
           <button
             onClick={() => onDelete(recipe._id)}
             className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-sm"
@@ -63,6 +109,9 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
                   src={img}
                   alt={`Recipe image ${idx + 1}`}
                   className="w-24 h-24 object-cover rounded-lg"
+                  onError={(e) => {
+                    e.target.src = "https://via.placeholder.com/100?text=Error";
+                  }}
                 />
               ))}
             </div>
@@ -73,13 +122,25 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
             <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Ingredients:
             </h4>
-            <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
-              {recipe.ingredients?.map((item, idx) => (
-                <li key={idx}>
-                  {item.ingredient?.name || "Unknown"} - {item.quantity} {item.capacity}
-                </li>
-              ))}
-            </ul>
+            {ingredientError ? (
+              <p className="text-sm text-red-500">{ingredientError}</p>
+            ) : loadingIngredients ? (
+              <p className="text-sm text-gray-500">Loading ingredients...</p>
+            ) : ingredients.length > 0 ? (
+              <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400">
+                {ingredients.map((item, idx) => (
+                  <li key={idx}>
+                    <span className="font-medium">{item.ingredient?.name || "Unknown"}</span> —{" "}
+                    {item.quantity} {item.capacity}
+                    {item.ingredient?.units && (
+                      <span className="text-xs text-gray-500"> (base: {item.ingredient.units})</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-500">No ingredients</p>
+            )}
           </div>
 
           {/* Instructions */}
