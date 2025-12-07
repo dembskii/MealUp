@@ -6,12 +6,10 @@ from fastapi import APIRouter, HTTPException, Response, Cookie, Request, Query, 
 
 from src.core.config import settings
 from src.models.model import (
-    Recipe,
-    RecipeCreate,
-    RecipeUpdate,
-    RecipeResponse
+    Recipe, RecipeCreate, RecipeUpdate, RecipeResponse,
+    Ingredient, IngredientCreate, IngredientUpdate, IngredientResponse
 )
-from src.services.recipe_service import RecipeService
+from src.services.recipe_service import RecipeService, IngredientService
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +22,72 @@ def get_user_id_from_header(x_user_id: Optional[str] = Header(None)) -> str:
         raise HTTPException(status_code=401, detail="Authentication required")
     return x_user_id
 
+
+# ============ INGREDIENT ENDPOINTS ============
+
+@router.get("/ingredients", response_model=list[IngredientResponse])
+async def get_ingredients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = Query(None)
+):
+    """Get list of ingredients with optional search"""
+    try:
+        ingredients = await IngredientService.get_ingredients(skip, limit, search)
+        return ingredients
+    except Exception as e:
+        logger.error(f"Error getting ingredients: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get ingredients")
+
+
+@router.get("/ingredients/{ingredient_id}", response_model=IngredientResponse)
+async def get_ingredient(ingredient_id: str):
+    """Get an ingredient by ID"""
+    ingredient = await IngredientService.get_ingredient(ingredient_id)
+    
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    
+    return ingredient
+
+
+@router.post("/ingredients", response_model=IngredientResponse, status_code=201)
+async def create_ingredient(ingredient_data: IngredientCreate):
+    """Create a new ingredient"""
+    try:
+        ingredient = await IngredientService.create_ingredient(ingredient_data)
+        return ingredient
+    except Exception as e:
+        logger.error(f"Error creating ingredient: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create ingredient")
+
+
+@router.put("/ingredients/{ingredient_id}", response_model=IngredientResponse)
+async def update_ingredient(
+    ingredient_id: str,
+    ingredient_update: IngredientUpdate
+):
+    """Update an ingredient"""
+    ingredient = await IngredientService.update_ingredient(ingredient_id, ingredient_update)
+    
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    
+    return ingredient
+
+
+@router.delete("/ingredients/{ingredient_id}", status_code=204)
+async def delete_ingredient(ingredient_id: str):
+    """Delete an ingredient"""
+    deleted = await IngredientService.delete_ingredient(ingredient_id)
+    
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    
+    return None
+
+
+# ============ RECIPE ENDPOINTS ============
 
 @router.get("/", response_model=list[RecipeResponse])
 async def get_recipes(

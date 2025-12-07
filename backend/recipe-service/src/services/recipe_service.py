@@ -4,10 +4,123 @@ import asyncio
 import logging
 
 from src.db.mongodb import get_database
-from src.models.model import Recipe, RecipeCreate, RecipeUpdate
+from src.models.model import (
+    Recipe, RecipeCreate, RecipeUpdate, 
+    Ingredient, IngredientCreate, IngredientUpdate
+)
 from src.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class IngredientService:
+    """Service for ingredient CRUD operations"""
+    
+    @staticmethod
+    async def create_ingredient(ingredient_data: IngredientCreate) -> Ingredient:
+        """Create a new ingredient"""
+        db = get_database()
+        collection = db[settings.INGREDIENTS_COLLECTION]
+
+        ingredient = Ingredient(
+            name=ingredient_data.name,
+            units=ingredient_data.units,
+            image=ingredient_data.image,
+            macro_per_hundred=ingredient_data.macro_per_hundred
+        )
+
+        ingredient_dict = ingredient.model_dump(by_alias=True)
+        await asyncio.to_thread(collection.insert_one, ingredient_dict)
+
+        logger.info(f"Created ingredient {ingredient.id}")
+        return ingredient
+    
+    @staticmethod
+    async def get_ingredient(ingredient_id: str) -> Optional[Ingredient]:
+        """Get an ingredient by ID"""
+        db = get_database()
+        collection = db[settings.INGREDIENTS_COLLECTION]
+        
+        ingredient_data: Optional[dict[str, Any]] = await asyncio.to_thread(
+            collection.find_one, 
+            {"_id": ingredient_id}
+        )
+        if ingredient_data:
+            return Ingredient(**ingredient_data)
+        return None
+    
+    @staticmethod
+    async def get_ingredients(
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None
+    ) -> List[Ingredient]:
+        """Get list of ingredients with pagination and search"""
+        db = get_database()
+        collection = db[settings.INGREDIENTS_COLLECTION]
+        
+        query = {}
+        if search:
+            query["name"] = {"$regex": search, "$options": "i"}
+        
+        cursor = collection.find(query).sort("name", 1).skip(skip).limit(limit)
+        ingredients: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+
+        return [Ingredient(**ingredient) for ingredient in ingredients]
+    
+    @staticmethod
+    async def update_ingredient(
+        ingredient_id: str,
+        ingredient_update: IngredientUpdate
+    ) -> Optional[Ingredient]:
+        """Update an ingredient"""
+        db = get_database()
+        collection = db[settings.INGREDIENTS_COLLECTION]
+        
+        # Check if ingredient exists
+        existing: Optional[dict[str, Any]] = await asyncio.to_thread(
+            collection.find_one,
+            {"_id": ingredient_id}
+        )
+        if not existing:
+            return None
+        
+        # Prepare update data
+        update_data = ingredient_update.model_dump(exclude_unset=True)
+        if update_data:
+            update_data["_updated_at"] = datetime.utcnow()
+            
+            await asyncio.to_thread(
+                collection.update_one,
+                {"_id": ingredient_id},
+                {"$set": update_data}
+            )
+            
+            updated_ingredient: Optional[dict[str, Any]] = await asyncio.to_thread(
+                collection.find_one,
+                {"_id": ingredient_id}
+            )
+            if updated_ingredient is None:
+                return None
+            return Ingredient(**updated_ingredient)
+        
+        return Ingredient(**existing)
+    
+    @staticmethod
+    async def delete_ingredient(ingredient_id: str) -> bool:
+        """Delete an ingredient"""
+        db = get_database()
+        collection = db[settings.INGREDIENTS_COLLECTION]
+        
+        result = await asyncio.to_thread(
+            collection.delete_one, 
+            {"_id": ingredient_id}
+        )
+        
+        if result.deleted_count > 0:
+            logger.info(f"Deleted ingredient {ingredient_id}")
+            return True
+        return False
 
 
 class RecipeService:
