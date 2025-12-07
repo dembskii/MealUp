@@ -20,4 +20,5 @@ EXPOSE 8003
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8004/health || exit 1
 
-CMD ["sh", "-c", "python src/init_excercises.py && uvicorn src.main:app --host 0.0.0.0 --port 8004"]
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port 8004"]
+# python src/init_excercises.py &&
