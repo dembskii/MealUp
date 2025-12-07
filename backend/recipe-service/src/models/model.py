@@ -69,18 +69,14 @@ class Ingredient(BaseModel):
 
 class WeightedIngredient(BaseModel):
     """Ingredient with specific quantity and unit for a recipe"""
-    ingredient: Ingredient = Field(..., description="Reference to the ingredient")
+    ingredient_id: str = Field(..., description="ID reference to the ingredient")
     capacity: CapacityUnit = Field(..., description="Unit of measurement for this recipe")
     quantity: float = Field(..., gt=0, description="Amount of ingredient needed")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "ingredient": {
-                    "_id": "550e8400-e29b-41d4-a716-446655440000",
-                    "name": "Tomato",
-                    "units": "g",
-                },
+                "ingredient_id": "550e8400-e29b-41d4-a716-446655440000",
                 "capacity": "g",
                 "quantity": 200.0,
             }
@@ -108,17 +104,7 @@ class Recipe(BaseModel):
                 "author_id": "google-oauth2|1234567890",
                 "ingredients": [
                     {
-                        "ingredient": {
-                            "_id": "550e8400-e29b-41d4-a716-446655440000",
-                            "name": "Tomato",
-                            "units": "g",
-                            "macro_per_hundred": {
-                                "calories": 18,
-                                "carbs": 3.9,
-                                "proteins": 0.9,
-                                "fats": 0.2,
-                            },
-                        },
+                        "ingredient_id": "550e8400-e29b-41d4-a716-446655440000",
                         "capacity": "g",
                         "quantity": 400.0,
                     }
@@ -144,11 +130,7 @@ class RecipeCreate(BaseModel):
             "example": {
                 "ingredients": [
                     {
-                        "ingredient": {
-                            "_id": "550e8400-e29b-41d4-a716-446655440000",
-                            "name": "Tomato",
-                            "units": "g",
-                        },
+                        "ingredient_id": "550e8400-e29b-41d4-a716-446655440000",
                         "capacity": "g",
                         "quantity": 400.0,
                     }
