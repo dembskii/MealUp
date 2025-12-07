@@ -132,3 +132,30 @@ async def proxy_recipes_root(request: Request, headers: Dict = Depends(get_auth_
         params=dict(request.query_params)
     )
 
+
+
+# Recipe Service Proxy Routes
+@router.api_route("/workouts/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_workouts(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy all requests to workout service"""
+    return await proxy.forward_request(
+        service_name="workout",
+        path=f"/workouts/{path}",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+@router.api_route("/workouts", methods=["GET", "POST"])
+async def proxy_workouts_root(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy requests to workout service root"""
+    return await proxy.forward_request(
+        service_name="workout",
+        path="/workouts",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )

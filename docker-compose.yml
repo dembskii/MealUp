@@ -160,7 +160,7 @@ services:
     ports:
       - "8004:8004"
     environment:
-      - MONGODB_URL=${WORKOUT_MONGODB_URL}
+      - WORKOUT_MONGODB_URL=${WORKOUT_MONGODB_URL}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
