@@ -26,7 +26,8 @@ const CAPACITY_UNITS = [
 
 export default function RecipeCreator({ onClose, onRecipeCreated }) {
   const [formData, setFormData] = useState({
-    prepare_instruction: "",
+    name: "",
+    prepare_instruction: [""],
     time_to_prepare: 30,
     images: [],
   });
@@ -84,7 +85,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
   const handleRemoveIngredient = (index) => {
     if (ingredients.length > 1) {
       setIngredients(ingredients.filter((_, i) => i !== index));
-      // Clean up search term and dropdown state
       const newSearchTerms = { ...searchTerms };
       const newDropdownOpen = { ...dropdownOpen };
       delete newSearchTerms[index];
@@ -129,14 +129,45 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
     });
   };
 
+  const handleAddStep = () => {
+    setFormData({
+      ...formData,
+      prepare_instruction: [...formData.prepare_instruction, ""],
+    });
+  };
+
+  const handleRemoveStep = (index) => {
+    if (formData.prepare_instruction.length > 1) {
+      setFormData({
+        ...formData,
+        prepare_instruction: formData.prepare_instruction.filter((_, i) => i !== index),
+      });
+    }
+  };
+
+  const handleStepChange = (index, value) => {
+    const updated = [...formData.prepare_instruction];
+    updated[index] = value;
+    setFormData({
+      ...formData,
+      prepare_instruction: updated,
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     // Validate
-    if (!formData.prepare_instruction.trim()) {
-      setError("Please provide preparation instructions.");
+    if (!formData.name.trim()) {
+      setError("Please provide a recipe name.");
+      setLoading(false);
+      return;
+    }
+
+    if (formData.prepare_instruction.some((step) => !step.trim())) {
+      setError("All instruction steps must be filled.");
       setLoading(false);
       return;
     }
@@ -148,12 +179,13 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
     }
 
     const payload = {
+      name: formData.name.trim(),
       ingredients: ingredients.map((ing) => ({
         ingredient_id: ing.ingredient_id,
         capacity: ing.capacity,
         quantity: ing.quantity,
       })),
-      prepare_instruction: formData.prepare_instruction,
+      prepare_instruction: formData.prepare_instruction.map((step) => step.trim()),
       time_to_prepare: formData.time_to_prepare * 60, // Convert minutes to seconds
       images: formData.images.length > 0 ? formData.images : null,
     };
@@ -201,6 +233,26 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
           )}
 
           <form onSubmit={handleSubmit}>
+            {/* Recipe Name */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Recipe Name
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    name: e.target.value,
+                  })
+                }
+                placeholder="e.g., Tomato Pasta"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                required
+              />
+            </div>
+
             {/* Ingredients */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -340,21 +392,40 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
 
             {/* Preparation Instructions */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Preparation Instructions
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                Preparation Instructions ({formData.prepare_instruction.length} steps)
               </label>
-              <textarea
-                value={formData.prepare_instruction}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    prepare_instruction: e.target.value,
-                  })
-                }
-                placeholder="Step by step instructions..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 h-24"
-                required
-              />
+              {formData.prepare_instruction.map((step, index) => (
+                <div key={index} className="mb-2 flex gap-2">
+                  <div className="flex-shrink-0 w-8 h-10 flex items-center justify-center bg-blue-100 dark:bg-blue-900/30 rounded-lg text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    {index + 1}
+                  </div>
+                  <textarea
+                    value={step}
+                    onChange={(e) => handleStepChange(index, e.target.value)}
+                    placeholder={`Step ${index + 1}...`}
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 h-16 resize-none text-sm"
+                    required
+                  />
+                  {formData.prepare_instruction.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveStep(index)}
+                      className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg font-semibold flex-shrink-0"
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={handleAddStep}
+                className="mt-2 w-full px-4 py-2 text-blue-600 dark:text-blue-400 border border-blue-600 dark:border-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+              >
+                + Add Step
+              </button>
             </div>
 
             {/* Preparation Time */}
