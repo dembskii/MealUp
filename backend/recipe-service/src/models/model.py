@@ -87,9 +87,10 @@ class WeightedIngredient(BaseModel):
 class Recipe(BaseModel):
     """Recipe document stored in MongoDB"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), alias="_id", description="Unique recipe ID")
+    name: str = Field(..., min_length=1, max_length=200, description="Recipe name")
     author_id: str = Field(..., description="User ID (auth0_sub) of recipe creator")
     ingredients: List[WeightedIngredient] = Field(..., min_length=1, description="List of weighted ingredients")
-    prepare_instruction: str = Field(..., min_length=1, description="Step-by-step preparation instructions")
+    prepare_instruction: List[str] = Field(..., min_length=1, description="Step-by-step preparation instructions")
     time_to_prepare: int = Field(..., gt=0, description="Time to prepare in seconds")
     images: Optional[List[str]] = Field(None, description="List of recipe image URLs")
     total_likes: int = Field(default=0, ge=0, description="Total number of likes")
@@ -101,6 +102,7 @@ class Recipe(BaseModel):
         json_schema_extra={
             "example": {
                 "_id": "650e8400-e29b-41d4-a716-446655440001",
+                "name": "Tomato Pasta",
                 "author_id": "google-oauth2|1234567890",
                 "ingredients": [
                     {
@@ -109,7 +111,11 @@ class Recipe(BaseModel):
                         "quantity": 400.0,
                     }
                 ],
-                "prepare_instruction": "1. Wash tomatoes\n2. Cut into pieces\n3. Cook for 20 minutes",
+                "prepare_instruction": [
+                    "Wash tomatoes",
+                    "Cut into pieces",
+                    "Cook for 20 minutes"
+                ],
                 "time_to_prepare": 1200,
                 "images": ["https://example.com/recipe1.jpg", "https://example.com/recipe2.jpg"],
                 "total_likes": 42,
@@ -120,14 +126,16 @@ class Recipe(BaseModel):
 
 class RecipeCreate(BaseModel):
     """Schema for creating a new recipe"""
+    name: str = Field(..., min_length=1, max_length=200)
     ingredients: List[WeightedIngredient] = Field(..., min_length=1)
-    prepare_instruction: str = Field(..., min_length=1)
+    prepare_instruction: List[str] = Field(..., min_length=1, description="List of instruction steps")
     time_to_prepare: int = Field(..., gt=0, description="Time in seconds")
     images: Optional[List[str]] = None
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "name": "Tomato Pasta",
                 "ingredients": [
                     {
                         "ingredient_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -135,7 +143,11 @@ class RecipeCreate(BaseModel):
                         "quantity": 400.0,
                     }
                 ],
-                "prepare_instruction": "1. Wash\n2. Cut\n3. Cook",
+                "prepare_instruction": [
+                    "Wash tomatoes",
+                    "Cut into pieces",
+                    "Cook for 20 minutes"
+                ],
                 "time_to_prepare": 1200,
                 "images": ["https://example.com/recipe.jpg"],
             }

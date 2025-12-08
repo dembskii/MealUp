@@ -133,6 +133,7 @@ class RecipeService:
         collection = db[settings.RECIPES_COLLECTION]
 
         recipe = Recipe(
+            name=recipe_data.name,
             author_id=author_id,
             ingredients=recipe_data.ingredients,
             prepare_instruction=recipe_data.prepare_instruction,

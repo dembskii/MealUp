@@ -27,21 +27,17 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
   // Fetch ingredients when expanding
   const handleExpandToggle = async () => {
     if (!isExpanded && ingredients.length === 0 && recipe.ingredients?.length > 0) {
-      // Need to fetch ingredients
       setLoadingIngredients(true);
       setIngredientError(null);
       
       try {
-        // Fetch all ingredients and filter by IDs
         const { data: allIngredients } = await api.get("/ingredients?limit=500");
         
-        // Create a map for quick lookup
         const ingredientMap = {};
         allIngredients.forEach((ing) => {
           ingredientMap[ing.id || ing._id] = ing;
         });
 
-        // Enrich recipe ingredients with full data
         const enrichedIngredients = recipe.ingredients.map((item) => ({
           ...item,
           ingredient: ingredientMap[item.ingredient_id] || { name: "Unknown", units: "?" },
@@ -63,12 +59,19 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start">
         <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+            {recipe.name}
+          </h3>
+          
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm text-gray-500 dark:text-gray-400">
               ⏱️ {formatTime(recipe.time_to_prepare)}
             </span>
             <span className="text-sm text-gray-500 dark:text-gray-400">
               • {recipe.ingredients?.length || 0} ingredients
+            </span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              • {recipe.prepare_instruction?.length || 0} steps
             </span>
           </div>
 
@@ -144,13 +147,24 @@ export default function RecipeListElement({ recipe, onLike, onUnlike, onDelete }
           </div>
 
           {/* Instructions */}
-          <div>
+          <div className="mb-4">
             <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">
               Instructions:
             </h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line">
-              {recipe.prepare_instruction}
-            </p>
+            {recipe.prepare_instruction && recipe.prepare_instruction.length > 0 ? (
+              <ol className="space-y-2">
+                {recipe.prepare_instruction.map((step, idx) => (
+                  <li key={idx} className="flex gap-3 text-sm text-gray-600 dark:text-gray-400">
+                    <span className="flex-shrink-0 font-semibold text-blue-600 dark:text-blue-400 w-6">
+                      {idx + 1}.
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-gray-500">No instructions</p>
+            )}
           </div>
 
           {/* Metadata */}
