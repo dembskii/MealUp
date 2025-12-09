@@ -6,18 +6,21 @@ from src.services.user_service import UserService
 from src.validators.schema import UserResponse, UserUpdate, UserListResponse, UserCreate
 from typing import Optional
 from uuid import UUID
+from typing import Dict
 import logging
+
+from common.auth_guard import require_auth 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
 
 
 @router.get("/users", response_model = UserListResponse)
 async def get_all_users(
     skip: int = 0,
     limit: int = 10,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth) 
 ):
     """Get all users with pagination"""
     try:
@@ -32,7 +35,8 @@ async def get_all_users(
 @router.get("/users/{uid}", response_model = UserResponse)
 async def get_user(
     uid: UUID,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get user by UID"""
     try:
@@ -51,7 +55,8 @@ async def get_user(
 @router.get("/users/auth0/{auth0_sub}", response_model = UserResponse)
 async def get_user_by_auth0(
     auth0_sub: str,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth) 
 ):
     """Get user by Auth0 sub"""
     try:
@@ -70,7 +75,8 @@ async def get_user_by_auth0(
 @router.post("/users", response_model = UserResponse)
 async def create_user(
     user_create: UserCreate,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth) 
 ):
     """Create a new user"""
     try:
@@ -123,7 +129,8 @@ async def sync_user_from_auth(
 async def update_user(
     uid: UUID,
     user_update: UserUpdate,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth) 
 ):
     """Update user"""
     try:
@@ -145,7 +152,8 @@ async def update_user(
 @router.delete("/users/{uid}")
 async def delete_user(
     uid: UUID,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth) 
 ):
     """Delete user"""
     try:

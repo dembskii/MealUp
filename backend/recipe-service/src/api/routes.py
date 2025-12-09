@@ -2,7 +2,7 @@ import uuid
 import logging
 from typing import Optional
 from urllib.parse import urlencode
-from fastapi import APIRouter, HTTPException, Response, Cookie, Request, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Depends
 
 from src.core.config import settings
 from src.models.model import (
@@ -10,7 +10,9 @@ from src.models.model import (
     Ingredient, IngredientCreate, IngredientUpdate, IngredientResponse
 )
 from src.services.recipe_service import RecipeService, IngredientService
+from typing import Dict
 
+from common.auth_guard import require_auth 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,7 +31,8 @@ def get_user_id_from_header(x_user_id: Optional[str] = Header(None)) -> str:
 async def get_ingredients(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get list of ingredients with optional search"""
     try:
@@ -41,7 +44,10 @@ async def get_ingredients(
 
 
 @router.get("/ingredients/{ingredient_id}", response_model=IngredientResponse)
-async def get_ingredient(ingredient_id: str):
+async def get_ingredient(
+    ingredient_id: str,
+    token_payload: Dict = Depends(require_auth)
+):
     """Get an ingredient by ID"""
     ingredient = await IngredientService.get_ingredient(ingredient_id)
     
@@ -52,7 +58,10 @@ async def get_ingredient(ingredient_id: str):
 
 
 @router.post("/ingredients", response_model=IngredientResponse, status_code=201)
-async def create_ingredient(ingredient_data: IngredientCreate):
+async def create_ingredient(
+    ingredient_data: IngredientCreate, 
+    token_payload: Dict = Depends(require_auth)
+):
     """Create a new ingredient"""
     try:
         ingredient = await IngredientService.create_ingredient(ingredient_data)
@@ -65,7 +74,8 @@ async def create_ingredient(ingredient_data: IngredientCreate):
 @router.put("/ingredients/{ingredient_id}", response_model=IngredientResponse)
 async def update_ingredient(
     ingredient_id: str,
-    ingredient_update: IngredientUpdate
+    ingredient_update: IngredientUpdate,
+    token_payload: Dict = Depends(require_auth)
 ):
     """Update an ingredient"""
     ingredient = await IngredientService.update_ingredient(ingredient_id, ingredient_update)
@@ -77,7 +87,10 @@ async def update_ingredient(
 
 
 @router.delete("/ingredients/{ingredient_id}", status_code=204)
-async def delete_ingredient(ingredient_id: str):
+async def delete_ingredient(
+    ingredient_id: str,
+    token_payload: Dict = Depends(require_auth)
+):
     """Delete an ingredient"""
     deleted = await IngredientService.delete_ingredient(ingredient_id)
     
@@ -93,7 +106,8 @@ async def delete_ingredient(ingredient_id: str):
 async def get_recipes(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    author_id: Optional[str] = Query(None)
+    author_id: Optional[str] = Query(None),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get list of recipes with pagination"""
     try:
@@ -107,7 +121,8 @@ async def get_recipes(
 @router.post("/", response_model=RecipeResponse, status_code=201)
 async def create_recipe(
     recipe_data: RecipeCreate,
-    x_user_id: str = Header(None, alias="X-User-Id")
+    x_user_id: str = Header(None, alias="X-User-Id"),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Create a new recipe"""
     user_id = get_user_id_from_header(x_user_id)
@@ -121,7 +136,10 @@ async def create_recipe(
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
-async def get_recipe(recipe_id: str):
+async def get_recipe(
+    recipe_id: str,
+    token_payload: Dict = Depends(require_auth)
+):
     """Get a recipe by ID"""
     recipe = await RecipeService.get_recipe(recipe_id)
     
@@ -135,7 +153,8 @@ async def get_recipe(recipe_id: str):
 async def update_recipe(
     recipe_id: str,
     recipe_update: RecipeUpdate,
-    x_user_id: str = Header(None, alias="X-User-Id")
+    x_user_id: str = Header(None, alias="X-User-Id"),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Update a recipe (only by author)"""
     user_id = get_user_id_from_header(x_user_id)
@@ -154,7 +173,8 @@ async def update_recipe(
 @router.delete("/{recipe_id}", status_code=204)
 async def delete_recipe(
     recipe_id: str,
-    x_user_id: str = Header(None, alias="X-User-Id")
+    x_user_id: str = Header(None, alias="X-User-Id"),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Delete a recipe (only by author)"""
     user_id = get_user_id_from_header(x_user_id)
@@ -171,7 +191,10 @@ async def delete_recipe(
 
 
 @router.post("/{recipe_id}/like", response_model=RecipeResponse)
-async def like_recipe(recipe_id: str):
+async def like_recipe(
+    recipe_id: str,
+    token_payload: Dict = Depends(require_auth)
+):
     """Like a recipe (increment like count)"""
     recipe = await RecipeService.like_recipe(recipe_id)
     
@@ -182,7 +205,10 @@ async def like_recipe(recipe_id: str):
 
 
 @router.post("/{recipe_id}/unlike", response_model=RecipeResponse)
-async def unlike_recipe(recipe_id: str):
+async def unlike_recipe(
+    recipe_id: str,
+    token_payload: Dict = Depends(require_auth)
+):
     """Unlike a recipe (decrement like count)"""
     recipe = await RecipeService.unlike_recipe(recipe_id)
     
