@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     RECIPES_COLLECTION: str = "recipes"
     INGREDIENTS_COLLECTION: str = "ingredients"
     RECIPE_VERSIONS_COLLECTION: str = "recipe_versions"
+
+    AUTH0_DOMAIN: str
+    AUTH0_AUDIENCE: Optional[str] = None
+    ALGORITHMS: str
     
     # Alias for consistency with mongodb.py
     @property
