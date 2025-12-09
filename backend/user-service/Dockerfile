@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY user-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY user-service/ .
+
+COPY common/ /app/common/
 
 EXPOSE 8002
 

@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Ustawiamy PYTHONPATH na /app, aby Python widział pakiety 'src' oraz 'common'
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
@@ -10,10 +11,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# 1. Kopiujemy requirements.txt
+# Ścieżka 'recipe-service/' jest wymagana, bo jesteśmy w kontekście folderu 'backend'
+COPY recipe-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# 2. Kopiujemy kod źródłowy serwisu
+# Zamiast 'COPY . .' używamy konkretnej ścieżki, aby wziąć tylko pliki tego serwisu
+# Zawartość folderu 'recipe-service' (np. src/) trafi bezpośrednio do /app
+COPY recipe-service/ .
+
+# 3. Kopiujemy wspólny moduł autoryzacji
+# To pozwoli na importowanie: from common.auth_guard import ...
+COPY common/ /app/common/
 
 EXPOSE 8003
 
