@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     #Redis
     AUTH_REDIS_PASSWORD: str
     REDIS_AUTH_URL: str
+
+    AUTH0_DOMAIN: str
+    AUTH0_AUDIENCE: Optional[str] = None
+    ALGORITHMS: str
     
     class Config:
         env_file = ".env.local" if Path(".env.local").exists() else ".env"

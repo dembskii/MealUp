@@ -81,7 +81,9 @@ services:
 
   # User Service
   user-service:
-    build: ./backend/user-service
+    build:
+      context: ./backend
+      dockerfile: user-service/Dockerfile
     ports:
       - "8002:8002"
     environment:
@@ -90,6 +92,8 @@ services:
       - POSTGRES_USER_DB=${POSTGRES_USER_DB}
       - USER_DATABASE_URL=${USER_DATABASE_URL}
       - PGPASSWORD=${POSTGRES_PASSWORD}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-postgres-db:
         condition: service_healthy
@@ -98,11 +102,15 @@ services:
 
   # Payment Service
   payment-service:
-    build: ./backend/payment-service
+    build:
+      context: ./backend  # Zmieniamy kontekst na folder nadrzędny
+      dockerfile: payment-service/Dockerfile
     ports:
       - "8005:8005"
     environment:
       - PAYMENT_DATABASE_URL=${PAYMENT_DATABASE_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-postgres-db:
         condition: service_healthy
@@ -111,11 +119,15 @@ services:
 
   # Forum Service
   forum-service:
-    build: ./backend/forum-service
+    build:
+      context: ./backend
+      dockerfile: forum-service/Dockerfile
     ports:
       - "8007:8007"
     environment:
       - FORUM_DATABASE_URL=${FORUM_DATABASE_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-postgres-db:
         condition: service_healthy
@@ -143,11 +155,15 @@ services:
 
   # Recipe Service
   recipe-service:
-    build: ./backend/recipe-service
+    build:
+      context: ./backend
+      dockerfile: recipe-service/Dockerfile
     ports:
       - "8003:8003"
     environment:
       - RECIPE_MONGODB_URL=${RECIPE_MONGODB_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
@@ -156,11 +172,15 @@ services:
 
   # Workout Service
   workout-service:
-    build: ./backend/workout-service
+    build:
+      context: ./backend
+      dockerfile: workout-service/Dockerfile
     ports:
       - "8004:8004"
     environment:
       - WORKOUT_MONGODB_URL=${WORKOUT_MONGODB_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
@@ -169,11 +189,15 @@ services:
 
   # Analytics Service
   analytics-service:
-    build: ./backend/analytics-service
+    build:
+      context: ./backend
+      dockerfile: analytics-service/Dockerfile
     ports:
       - "8006:8006"
     environment:
       - MONGODB_URL=${ANALYTICS_MONGODB_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
@@ -182,11 +206,15 @@ services:
 
   # Notification Service + Redis
   notification-service:
-    build: ./backend/notification-service
+    build:
+      context: ./backend
+      dockerfile: notification-service/Dockerfile
     ports:
       - "8008:8008"
     environment:
       - REDIS_NOT_URL=${REDIS_NOT_URL}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
     depends_on:
       notification-redis:
         condition: service_healthy
