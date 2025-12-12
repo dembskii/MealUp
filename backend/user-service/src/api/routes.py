@@ -56,7 +56,7 @@ async def get_user(
 async def get_user_by_auth0(
     auth0_sub: str,
     session: AsyncSession = Depends(get_session),
-    token_payload: Dict = Depends(require_auth) 
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get user by Auth0 sub"""
     try:
