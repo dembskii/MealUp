@@ -104,7 +104,7 @@ services:
   # Payment Service
   payment-service:
     build:
-      context: ./backend  # Zmieniamy kontekst na folder nadrzędny
+      context: ./backend
       dockerfile: payment-service/Dockerfile
     ports:
       - "8005:8005"
