@@ -156,13 +156,13 @@ async def init_ingredients():
         existing_count = collection.count_documents({})
         if existing_count > 0:
             print(f"⚠️  Collection already has {existing_count} ingredients.")
-            response = input("Do you want to clear and reinitialize? (y/n): ")
-            if response.lower() == 'y':
-                collection.delete_many({})
-                print("Cleared existing ingredients.")
-            else:
-                print("Aborting initialization.")
-                return
+            # response = input("Do you want to clear and reinitialize? (y/n): ")
+            # if response.lower() == 'y':
+            #     collection.delete_many({})
+            #     print("Cleared existing ingredients.")
+            # else:
+            print("Aborting initialization.")
+            return
         
         # Insert sample ingredients
         ingredients_to_insert = []
