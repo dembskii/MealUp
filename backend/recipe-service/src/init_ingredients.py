@@ -153,14 +153,9 @@ async def init_ingredients():
         collection = db[settings.INGREDIENTS_COLLECTION]
         
         # Check if ingredients already exist
-        existing_count = collection.count_documents({})
+        existing_count = await collection.count_documents({})
         if existing_count > 0:
             print(f"⚠️  Collection already has {existing_count} ingredients.")
-            # response = input("Do you want to clear and reinitialize? (y/n): ")
-            # if response.lower() == 'y':
-            #     collection.delete_many({})
-            #     print("Cleared existing ingredients.")
-            # else:
             print("Aborting initialization.")
             return
         
@@ -175,7 +170,7 @@ async def init_ingredients():
             )
             ingredients_to_insert.append(ingredient.model_dump(by_alias=True))
         
-        result = collection.insert_many(ingredients_to_insert)
+        result = await collection.insert_many(ingredients_to_insert)
         
         print(f"✅ Successfully initialized {len(result.inserted_ids)} ingredients!")
         print("\nSample ingredients added:")

@@ -1,6 +1,5 @@
 from typing import Any, List, Optional
 from datetime import datetime
-import asyncio
 import logging
 
 from src.db.mongodb import get_database
@@ -30,7 +29,7 @@ class IngredientService:
         )
 
         ingredient_dict = ingredient.model_dump(by_alias=True)
-        await asyncio.to_thread(collection.insert_one, ingredient_dict)
+        await collection.insert_one(ingredient_dict)
 
         logger.info(f"Created ingredient {ingredient.id}")
         return ingredient
@@ -41,10 +40,7 @@ class IngredientService:
         db = get_database()
         collection = db[settings.INGREDIENTS_COLLECTION]
         
-        ingredient_data: Optional[dict[str, Any]] = await asyncio.to_thread(
-            collection.find_one, 
-            {"_id": ingredient_id}
-        )
+        ingredient_data = await collection.find_one({"_id": ingredient_id})
         if ingredient_data:
             return Ingredient(**ingredient_data)
         return None
@@ -64,7 +60,7 @@ class IngredientService:
             query["name"] = {"$regex": search, "$options": "i"}
         
         cursor = collection.find(query).sort("name", 1).skip(skip).limit(limit)
-        ingredients: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+        ingredients = await cursor.to_list(length=limit)
 
         return [Ingredient(**ingredient) for ingredient in ingredients]
     
@@ -78,10 +74,7 @@ class IngredientService:
         collection = db[settings.INGREDIENTS_COLLECTION]
         
         # Check if ingredient exists
-        existing: Optional[dict[str, Any]] = await asyncio.to_thread(
-            collection.find_one,
-            {"_id": ingredient_id}
-        )
+        existing = await collection.find_one({"_id": ingredient_id})
         if not existing:
             return None
         
@@ -90,16 +83,12 @@ class IngredientService:
         if update_data:
             update_data["_updated_at"] = datetime.utcnow()
             
-            await asyncio.to_thread(
-                collection.update_one,
+            await collection.update_one(
                 {"_id": ingredient_id},
                 {"$set": update_data}
             )
             
-            updated_ingredient: Optional[dict[str, Any]] = await asyncio.to_thread(
-                collection.find_one,
-                {"_id": ingredient_id}
-            )
+            updated_ingredient = await collection.find_one({"_id": ingredient_id})
             if updated_ingredient is None:
                 return None
             return Ingredient(**updated_ingredient)
@@ -112,10 +101,7 @@ class IngredientService:
         db = get_database()
         collection = db[settings.INGREDIENTS_COLLECTION]
         
-        result = await asyncio.to_thread(
-            collection.delete_one, 
-            {"_id": ingredient_id}
-        )
+        result = await collection.delete_one({"_id": ingredient_id})
         
         if result.deleted_count > 0:
             logger.info(f"Deleted ingredient {ingredient_id}")
@@ -142,7 +128,7 @@ class RecipeService:
         )
 
         recipe_dict = recipe.model_dump(by_alias=True)
-        await asyncio.to_thread(collection.insert_one, recipe_dict)
+        await collection.insert_one(recipe_dict)
 
         logger.info(f"Created recipe {recipe.id} by author {author_id}")
         return recipe
@@ -153,7 +139,7 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        recipe_data: Optional[dict[str, Any]] = await asyncio.to_thread(collection.find_one, {"_id": recipe_id})
+        recipe_data = await collection.find_one({"_id": recipe_id})
         if recipe_data:
             return Recipe(**recipe_data)
         return None
@@ -173,7 +159,7 @@ class RecipeService:
             query["author_id"] = author_id
         
         cursor = collection.find(query).sort("_created_at", -1).skip(skip).limit(limit)
-        recipes: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+        recipes = await cursor.to_list(length=limit)
 
         return [Recipe(**recipe) for recipe in recipes]
     
@@ -188,10 +174,7 @@ class RecipeService:
         collection = db[settings.RECIPES_COLLECTION]
         
         # Check if recipe exists and belongs to author
-        existing: Optional[dict[str, Any]] = await asyncio.to_thread(
-            collection.find_one,
-            {"_id": recipe_id, "author_id": author_id}
-        )
+        existing = await collection.find_one({"_id": recipe_id, "author_id": author_id})
         if not existing:
             return None
         
@@ -200,18 +183,14 @@ class RecipeService:
         if update_data:
             update_data["_updated_at"] = datetime.utcnow()
             
-            result = await asyncio.to_thread(
-                collection.update_one,
+            result = await collection.update_one(
                 {"_id": recipe_id},
                 {"$set": update_data}
             )
             
             if result.modified_count > 0:
                 logger.info(f"Updated recipe {recipe_id}")
-                updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
-                    collection.find_one,
-                    {"_id": recipe_id}
-                )
+                updated_recipe = await collection.find_one({"_id": recipe_id})
                 if updated_recipe is None:
                     return None
                 return Recipe(**updated_recipe)
@@ -224,7 +203,7 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await asyncio.to_thread(collection.delete_one, {"_id": recipe_id, "author_id": author_id})
+        result = await collection.delete_one({"_id": recipe_id, "author_id": author_id})
         
         if result.deleted_count > 0:
             logger.info(f"Deleted recipe {recipe_id}")
@@ -237,18 +216,14 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await asyncio.to_thread(
-            collection.update_one,
+        result = await collection.update_one(
             {"_id": recipe_id},
             {"$inc": {"total_likes": 1}}
         )
         
         if result.modified_count > 0:
             logger.info(f"Liked recipe {recipe_id}")
-            updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
-                collection.find_one,
-                {"_id": recipe_id}
-            )
+            updated_recipe = await collection.find_one({"_id": recipe_id})
             if updated_recipe is None:
                 return None
             return Recipe(**updated_recipe)
@@ -260,18 +235,14 @@ class RecipeService:
         db = get_database()
         collection = db[settings.RECIPES_COLLECTION]
         
-        result = await asyncio.to_thread(
-            collection.update_one,
+        result = await collection.update_one(
             {"_id": recipe_id, "total_likes": {"$gt": 0}},
             {"$inc": {"total_likes": -1}}
         )
         
         if result.modified_count > 0:
             logger.info(f"Unliked recipe {recipe_id}")
-            updated_recipe: Optional[dict[str, Any]] = await asyncio.to_thread(
-                collection.find_one,
-                {"_id": recipe_id}
-            )
+            updated_recipe = await collection.find_one({"_id": recipe_id})
             if updated_recipe is None:
                 return None
             return Recipe(**updated_recipe)
