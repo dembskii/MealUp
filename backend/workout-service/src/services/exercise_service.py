@@ -1,6 +1,5 @@
 from typing import Any, List, Optional
 from datetime import datetime
-import asyncio
 import logging
 
 from src.db.mongodb import get_database
@@ -34,7 +33,7 @@ class ExerciseService:
         )
 
         exercise_dict = exercise.model_dump(by_alias=True)
-        await asyncio.to_thread(collection.insert_one, exercise_dict)
+        await collection.insert_one(exercise_dict)
 
         logger.info(f"Created exercise {exercise.id}: {exercise.name}")
         return exercise
@@ -45,10 +44,7 @@ class ExerciseService:
         db = get_database()
         collection = db[settings.EXERCISES_COLLECTION]
         
-        exercise_data: Optional[dict[str, Any]] = await asyncio.to_thread(
-            collection.find_one, 
-            {"_id": exercise_id}
-        )
+        exercise_data = await collection.find_one({"_id": exercise_id})
         if exercise_data:
             return Exercise(**exercise_data)
         return None
@@ -78,7 +74,7 @@ class ExerciseService:
             query["category"] = category.value
         
         cursor = collection.find(query).sort("name", 1).skip(skip).limit(limit)
-        exercises: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+        exercises = await cursor.to_list(length=limit)
 
         return [Exercise(**exercise) for exercise in exercises]
     
@@ -89,7 +85,7 @@ class ExerciseService:
         collection = db[settings.EXERCISES_COLLECTION]
         
         cursor = collection.find({"_id": {"$in": exercise_ids}})
-        exercises: list[dict[str, Any]] = await asyncio.to_thread(lambda: list(cursor))
+        exercises = await cursor.to_list(length=len(exercise_ids))
         
         return [Exercise(**exercise) for exercise in exercises]
     
@@ -103,10 +99,7 @@ class ExerciseService:
         collection = db[settings.EXERCISES_COLLECTION]
         
         # Check if exercise exists
-        existing: Optional[dict[str, Any]] = await asyncio.to_thread(
-            collection.find_one,
-            {"_id": exercise_id}
-        )
+        existing = await collection.find_one({"_id": exercise_id})
         if not existing:
             return None
         
@@ -115,16 +108,12 @@ class ExerciseService:
         if update_data:
             update_data["_updated_at"] = datetime.utcnow()
             
-            await asyncio.to_thread(
-                collection.update_one,
+            await collection.update_one(
                 {"_id": exercise_id},
                 {"$set": update_data}
             )
             
-            updated_exercise: Optional[dict[str, Any]] = await asyncio.to_thread(
-                collection.find_one,
-                {"_id": exercise_id}
-            )
+            updated_exercise = await collection.find_one({"_id": exercise_id})
             if updated_exercise is None:
                 return None
             return Exercise(**updated_exercise)
@@ -137,10 +126,7 @@ class ExerciseService:
         db = get_database()
         collection = db[settings.EXERCISES_COLLECTION]
         
-        result = await asyncio.to_thread(
-            collection.delete_one, 
-            {"_id": exercise_id}
-        )
+        result = await collection.delete_one({"_id": exercise_id})
         
         if result.deleted_count > 0:
             logger.info(f"Deleted exercise {exercise_id}")
@@ -166,5 +152,5 @@ class ExerciseService:
         if category:
             query["category"] = category.value
         
-        count: int = await asyncio.to_thread(collection.count_documents, query)
+        count = await collection.count_documents(query)
         return count
