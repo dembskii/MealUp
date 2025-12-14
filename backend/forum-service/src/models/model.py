@@ -5,6 +5,8 @@ from typing import Optional, List
 import uuid
 
 
+
+
 class Comment(SQLModel, table=True):
     __tablename__ = "comments"
 
