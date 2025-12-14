@@ -1,0 +1,58 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from src.core.config import settings
+from sqlmodel import SQLModel
+import logging
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print(f"Server is starting...")
+    yield
+    print(f"Server has been stopped")
+
+
+app = FastAPI(
+    title = settings.PROJECT_NAME,
+    version = settings.VERSION,
+    description = "Forum Service for MealUp",
+    lifespan = lifespan
+)
+
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins = settings.ALLOWED_ORIGINS,
+    allow_credentials = True,
+    allow_methods = ["*"],
+    allow_headers = ["*"],
+)
+
+
+
+#app.include_router(router, prefix="/forum")
+
+
+@app.get("/")
+async def root():
+    return {"message": "Forum Service is running", "version": settings.VERSION}
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker"""
+    return {"status": "healthy", "service": "user-service"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host = "0.0.0.0", port = 8007)
