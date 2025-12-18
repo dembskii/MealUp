@@ -3,7 +3,7 @@ from logging.config import fileConfig
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
-from src.models.model import Comment, Post
+from src.models import *
 from sqlmodel import SQLModel
 from src.core.config import settings
 import sqlmodel
