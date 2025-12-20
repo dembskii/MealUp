@@ -4,7 +4,6 @@ from typing import Optional
 
 
 
-
 class CommentCreate(BaseModel):
     """Schema for creating a new comment"""
     content: str = Field(
