@@ -23,8 +23,8 @@ class PostView(SQLModel, table=True):
         description="User ID who viewed the post (nullable for anonymous views)"
     )
 
-    post_uid: uuid.UUID = Field(
-        foreign_key="posts.uid",
+    post_id: uuid.UUID = Field(
+        foreign_key="posts.id",
         description="Reference to the viewed post"
     )
 

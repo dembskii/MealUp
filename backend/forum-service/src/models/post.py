@@ -1,6 +1,6 @@
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Relationship, Column
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 import uuid
 
@@ -10,7 +10,7 @@ class Post(SQLModel, table=True):
 
     __tablename__ = "posts"
 
-    uid: uuid.UUID = Field(
+    id: uuid.UUID = Field(
         sa_column=Column(
             pg.UUID,
             nullable=False,
@@ -68,11 +68,11 @@ class Post(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )
     
     updated_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now, onupdate=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc), onupdate = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )

@@ -1,6 +1,7 @@
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Column
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import UniqueConstraint
 import uuid
 
 
@@ -27,9 +28,10 @@ class CommentLike(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )
 
-    class Config:
-        unique_together = [("user_id", "comment_id")]
+    __table_args__ = (
+        UniqueConstraint('user_id', 'comment_id', name='uq_user_comment_like'),
+    )
