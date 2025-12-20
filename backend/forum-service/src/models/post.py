@@ -19,7 +19,7 @@ class Post(SQLModel, table=True):
         )
     )
     
-    author_uid: uuid.UUID = Field(
+    author_id: uuid.UUID = Field(
         description="User ID of the post author"
     )
     
