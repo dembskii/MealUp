@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
-from typing import Optional, List
-from uuid import UUID
+from typing import Optional
+
 
 
 
