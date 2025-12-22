@@ -1,6 +1,7 @@
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Column
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import UniqueConstraint
 import uuid
 
 
@@ -21,15 +22,16 @@ class PostLike(SQLModel, table=True):
         description="User ID who liked the post"
     )
 
-    post_uid: uuid.UUID = Field(
-        foreign_key="posts.uid",
+    post_id: uuid.UUID = Field(
+        foreign_key="posts.id",
         description="Reference to the liked post"
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )
 
-    class Config:
-        unique_together = [("user_id", "post_uid")]
+    __table_args__ = (
+        UniqueConstraint('user_id', 'post_id', name='uq_user_post_like'),
+    )

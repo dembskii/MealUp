@@ -49,6 +49,8 @@ async def get_services():
         "auth_service": settings.AUTH_SERVICE_URL,
         "user_service": settings.USER_SERVICE_URL,
         "recipe_service": settings.RECIPE_SERVICE_URL,
+        "user_service": settings.USER_SERVICE_URL,
+        "forum_service": settings.FORUM_SERVICE_URL,
     }
 
 
@@ -154,6 +156,34 @@ async def proxy_workouts_root(request: Request, headers: Dict = Depends(get_auth
     return await proxy.forward_request(
         service_name="workout",
         path="/workouts",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+
+# Forum Service Proxy Routes
+@router.api_route("/forum/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_forum(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy all requests to forum service"""
+    return await proxy.forward_request(
+        service_name="forum",
+        path=f"/forum/{path}",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+@router.api_route("/forum", methods=["GET", "POST"])
+async def proxy_forum_root(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy requests to forum service root"""
+    return await proxy.forward_request(
+        service_name="forum",
+        path="/forum",
         method=request.method,
         headers=headers,
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,

@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     USER_SERVICE_URL: str
     RECIPE_SERVICE_URL: str
     WORKOUT_SERVICE_URL: str
+    FORUM_SERVICE_URL: str
 
     # Timeout settings (in seconds)
     REQUEST_TIMEOUT: float = 30.0

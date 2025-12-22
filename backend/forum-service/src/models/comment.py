@@ -1,6 +1,6 @@
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Relationship, Column
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
@@ -35,8 +35,8 @@ class Comment(SQLModel, table=True):
         description="Number of likes on the comment"
     )
 
-    post_uid: uuid.UUID = Field(
-        foreign_key="posts.uid",
+    post_id: uuid.UUID = Field(
+        foreign_key="posts.id",
         description="Reference to the post this comment belongs to"
     )
 
@@ -51,11 +51,11 @@ class Comment(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )
 
     updated_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now, onupdate=datetime.now),
-        default_factory=datetime.now
+        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc), onupdate = lambda: datetime.now(timezone.utc)),
+        default_factory = lambda: datetime.now(timezone.utc)
     )

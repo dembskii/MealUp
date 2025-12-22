@@ -5,6 +5,8 @@ from src.core.config import settings
 from sqlmodel import SQLModel
 import logging
 
+from src.api import posts as post_routes
+
 logging.basicConfig(
     level = logging.INFO,
     format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -38,8 +40,9 @@ app.add_middleware(
 )
 
 
+# Include API routers
+app.include_router(post_routes.router, prefix="/forum", tags=["posts"])
 
-#app.include_router(router, prefix="/forum")
 
 
 @app.get("/")
