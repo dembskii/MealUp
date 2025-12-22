@@ -67,11 +67,11 @@ class PostUpdate(BaseModel):
 
 class PostResponse(BaseModel):
     """Schema for post response"""
-    id: str = Field(
+    id: UUID = Field(
         alias="_id",
         description="Unique post ID"
     )
-    user_id: str = Field(
+    author_id: UUID = Field(
         description="ID of the user who created the post"
     )
     title: str = Field(
@@ -97,15 +97,10 @@ class PostResponse(BaseModel):
         examples=[42],
         description="Total number of likes on the post"
     )
-    total_views: int = Field(
+    views_count: int = Field(
         ge=0,
         examples=[156],
         description="Total number of views on the post"
-    )
-    total_comments: int = Field(
-        ge=0,
-        examples=[23],
-        description="Total number of comments on the post"
     )
     created_at: datetime = Field(
         alias="_created_at",
@@ -117,6 +112,7 @@ class PostResponse(BaseModel):
     )
 
     model_config = ConfigDict(
+        from_attributes=True,
         populate_by_name=True,
         json_schema_extra={
             "example": {

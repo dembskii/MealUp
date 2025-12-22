@@ -45,9 +45,10 @@ class Post(SQLModel, table=True):
         description="Number of likes on the post"
     )
     
-    images: Optional[str] = Field(
+    images: Optional[List[str]] = Field(
+        sa_column=Column(pg.ARRAY(pg.TEXT)),
         default=None,
-        description="URL to post images"
+        description="List of image URLs"
     )
 
     views_count: int = Field(
@@ -68,11 +69,20 @@ class Post(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
-        default_factory = lambda: datetime.now(timezone.utc)
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
     
     updated_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc), onupdate = lambda: datetime.now(timezone.utc)),
-        default_factory = lambda: datetime.now(timezone.utc)
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+            onupdate=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
