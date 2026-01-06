@@ -229,3 +229,28 @@ async def recalculate_all_trending(
         "message": "Trending coefficients recalculated",
         "updated_posts": updated_count
     }
+
+
+
+@router.post("/posts/{post_id}/like", response_model=dict, status_code=status.HTTP_200_OK)
+async def like_post(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    author_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Like a post"""
+    try:
+        uuid_author_id = UUID(str(author_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+        )
+    
+    success = await PostService.track_post_like(session, post_id, uuid_author_id)
+    
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
+    
+    return {"message": "Post liked successfully"}
