@@ -267,6 +267,31 @@ async def like_post(
 
 
 
+@router.post("/posts/{post_id}/unlike", response_model=dict, status_code=status.HTTP_200_OK)
+async def unlike_post(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    author_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Unlike a post"""
+    try:
+        uuid_author_id = UUID(str(author_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+        )
+    
+    success = await LikeService.track_post_unlike(session, post_id, uuid_author_id)
+    
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or not liked")
+    
+    return {"message": "Post unliked successfully"}
+
+
+
 @router.get("/posts/{post_id}/likes", response_model=dict, status_code=status.HTTP_200_OK)
 async def get_post_likes(
     post_id: UUID,
