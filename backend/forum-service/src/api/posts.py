@@ -5,6 +5,7 @@ from uuid import UUID
 import logging
 
 from src.services.post_service import PostService
+from src.services.like_service import LikeService
 from src.validators.post import PostCreate, PostUpdate, PostResponse
 from src.db.main import get_session
 
@@ -18,6 +19,7 @@ router = APIRouter()
 def get_user_id_from_header(x_user_id: Optional[str] = Header(None, alias="X-User-Id")) -> Optional[str]:
     """Extract user ID from header (set by gateway after auth) - returns None if not present"""
     return x_user_id
+
 
 
 def get_required_user_id(
@@ -38,6 +40,7 @@ def get_required_user_id(
     )
 
 
+
 @router.get("/posts", response_model=List[PostResponse], status_code=status.HTTP_200_OK)
 async def get_all_posts(
     skip: int = Query(0, ge=0),
@@ -47,6 +50,7 @@ async def get_all_posts(
     """Get all posts with pagination"""
     posts = await PostService.get_all_posts(session, skip, limit)
     return posts
+
 
 
 @router.get("/posts/trending", response_model=List[PostResponse], status_code=status.HTTP_200_OK)
@@ -61,6 +65,7 @@ async def get_trending_posts(
     return posts
 
 
+
 @router.get("/posts/{post_id}", response_model=PostResponse, status_code=status.HTTP_200_OK)
 async def get_post_by_id(
     post_id: UUID,
@@ -71,6 +76,7 @@ async def get_post_by_id(
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     return post
+
 
 
 @router.post("/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
@@ -190,11 +196,15 @@ async def get_post_views(
     """Get view count for a post"""
     count = await PostService.get_post_views_count(session, post_id, hours)
     
+    if count is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    
     return {
         "post_id": str(post_id),
         "views_count": count,
         "timeframe_hours": hours
     }
+
 
 
 # ============ TRENDING COEFFICIENT ============
@@ -209,7 +219,7 @@ async def calculate_trending_coefficient(
     
     if coefficient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    
+
     return {
         "post_id": str(post_id),
         "trending_coefficient": coefficient
@@ -248,7 +258,7 @@ async def like_post(
             detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
         )
     
-    success = await PostService.track_post_like(session, post_id, uuid_author_id)
+    success = await LikeService.track_post_like(session, post_id, uuid_author_id)
     
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
@@ -265,7 +275,10 @@ async def get_post_likes(
 
 ):
     """Get like count for a post"""
-    count = await PostService.get_post_likes_count(session, post_id)
+    count = await LikeService.get_post_likes_count(session, post_id)
+    
+    if count is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     
     return {
         "post_id": str(post_id),
