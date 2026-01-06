@@ -28,8 +28,12 @@ class CommentLike(SQLModel, table=True):
     )
 
     created_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default = lambda: datetime.now(timezone.utc)),
-        default_factory = lambda: datetime.now(timezone.utc)
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
 
     __table_args__ = (
