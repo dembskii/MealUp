@@ -260,7 +260,9 @@ async def like_post(
 @router.get("/posts/{post_id}/likes", response_model=dict, status_code=status.HTTP_200_OK)
 async def get_post_likes(
     post_id: UUID,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+
 ):
     """Get like count for a post"""
     count = await PostService.get_post_likes_count(session, post_id)
