@@ -254,3 +254,18 @@ async def like_post(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
     
     return {"message": "Post liked successfully"}
+
+
+
+@router.get("/posts/{post_id}/likes", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_post_likes(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    """Get like count for a post"""
+    count = await PostService.get_post_likes_count(session, post_id)
+    
+    return {
+        "post_id": str(post_id),
+        "likes_count": count
+    }

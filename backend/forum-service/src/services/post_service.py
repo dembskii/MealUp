@@ -333,6 +333,25 @@ class PostService:
             return 0
 
 
+
+    @staticmethod
+    async def get_post_likes_count(
+        session: AsyncSession,
+        post_id: UUID
+    ) -> int:
+        """Get like count for a post"""
+        try:
+            statement = select(func.count(PostLike.id)).where(PostLike.post_id == post_id)
+            result = await session.exec(statement)
+            count = result.first() or 0
+            logger.info(f"Post {post_id} has {count} likes")
+            return count
+        except Exception as e:
+            logger.error(f"Error getting post likes count: {str(e)}")
+            return 0
+
+
+
     @staticmethod
     async def recalculate_all_trending_coefficients(
         session: AsyncSession
