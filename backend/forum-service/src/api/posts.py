@@ -246,19 +246,19 @@ async def recalculate_all_trending(
 async def like_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    author_id: str = Depends(get_required_user_id),
+    user_id: str = Depends(get_required_user_id),
     token_payload: Dict = Depends(require_auth)
 ):
     """Like a post"""
     try:
-        uuid_author_id = UUID(str(author_id))
+        uuid_user_id = UUID(str(user_id))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
         )
     
-    success = await LikeService.track_post_like(session, post_id, uuid_author_id)
+    success = await LikeService.track_post_like(session, post_id, uuid_user_id)
     
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
@@ -271,22 +271,22 @@ async def like_post(
 async def unlike_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    author_id: str = Depends(get_required_user_id),
+    user_id: str = Depends(get_required_user_id),
     token_payload: Dict = Depends(require_auth)
 ):
     """Unlike a post"""
     try:
-        uuid_author_id = UUID(str(author_id))
+        uuid_user_id = UUID(str(user_id))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
         )
     
-    success = await LikeService.track_post_unlike(session, post_id, uuid_author_id)
+    success = await LikeService.track_post_unlike(session, post_id, uuid_user_id)
     
     if not success:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or not liked")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
     
     return {"message": "Post unliked successfully"}
 
