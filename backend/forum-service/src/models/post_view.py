@@ -2,6 +2,7 @@ import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Column
 from datetime import datetime
 from typing import Optional
+from datetime import timezone
 import uuid
 
 
@@ -29,9 +30,12 @@ class PostView(SQLModel, table=True):
     )
 
     viewed_at: datetime = Field(
-        sa_column=Column(pg.TIMESTAMP, default=datetime.now),
-        default_factory=datetime.now,
-        description="Timestamp of the view"
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
     )
 
     engagement_seconds: Optional[int] = Field(
