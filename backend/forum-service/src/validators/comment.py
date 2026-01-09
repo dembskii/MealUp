@@ -9,7 +9,7 @@ class CommentCreate(BaseModel):
     content: str = Field(
         ...,
         min_length=1,
-        max_length=2000,
+        max_length=500, 
         examples=["Great post! Thanks for sharing this recipe."],
         description="Content of the comment"
     )
@@ -25,7 +25,7 @@ class CommentUpdate(BaseModel):
     content: str = Field(
         ...,
         min_length=1,
-        max_length=2000,
+        max_length=500,
         examples=["Updated comment content..."],
         description="Updated content of the comment"
     )
