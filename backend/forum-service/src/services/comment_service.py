@@ -176,9 +176,7 @@ class CommentService:
             )
             result = await session.exec(statement)
             all_comments = result.all()
-            
-            comments_dict = {str(comment.id): comment for comment in all_comments}
-            
+
             def build_tree(parent_id: Optional[str], depth: int = 0) -> List[dict]:
                 if depth >= max_depth:
                     return []
