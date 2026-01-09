@@ -6,6 +6,7 @@ from sqlmodel import SQLModel
 import logging
 
 from src.api import posts as post_routes
+from src.api import comments as comment_routes
 
 logging.basicConfig(
     level = logging.INFO,
@@ -42,6 +43,7 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(post_routes.router, prefix="/forum", tags=["posts"])
+app.include_router(comment_routes.router, prefix="/forum", tags=["comments"])
 
 
 
