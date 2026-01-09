@@ -55,7 +55,16 @@ async def create_comment(
             detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
         )
     
-    parent_id = UUID(comment_data.parent_comment_id) if comment_data.parent_comment_id else None
+    if comment_data.parent_comment_id:
+        try:
+            parent_id = UUID(comment_data.parent_comment_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid parent_comment_id format. Expected UUID, got: {comment_data.parent_comment_id}"
+            )
+    else:
+        parent_id = None
     
     comment = await CommentService.create_comment(
         session=session,
@@ -262,7 +271,6 @@ async def delete_comment(
     session: AsyncSession = Depends(get_session),
     token_payload: Dict = Depends(require_auth),
     x_user_id: str = Header(None, alias="X-User-Id"),
-    token_payload: Dict = Depends(require_auth)
 ):
     """Delete a comment and all its replies"""
     author_id = get_user_id_from_header(x_user_id)
@@ -297,7 +305,7 @@ async def like_comment(
     comment_id: UUID,
     session: AsyncSession = Depends(get_session),
     user_id: str = Depends(get_required_user_id),
-    token_payload: Dict = Depends(require_auth),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Like a comment"""
     try:

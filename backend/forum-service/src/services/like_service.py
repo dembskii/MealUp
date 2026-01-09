@@ -217,9 +217,8 @@ class LikeService:
             
             await session.delete(existing_like)
             
-            if comment.total_likes > 0:
-                comment.total_likes -= 1
-                session.add(comment)
+            comment.total_likes = max(0, (comment.total_likes or 0) - 1)
+            session.add(comment)
             
             await session.commit()
 
