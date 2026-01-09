@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 
 from src.models.post import Post
-from src.models.post_like import PostLike
 from src.models.post_view import PostView
 from src.models.comment import Comment
+from src.services.comment_service import CommentService
 
 
 logger = logging.getLogger(__name__)
@@ -199,10 +199,11 @@ class PostService:
             likes_count = post.total_likes
             views_count = post.views_count
             
-            # Count comments for this post
-            comments_statement = select(func.count(Comment.id)).where(Comment.post_id == post_id)
-            comments_result = await session.exec(comments_statement)
-            comments_count = comments_result.first() or 0
+            # ZMIENIONE: Używamy CommentService zamiast bezpośredniego zapytania
+            comments_count = await CommentService.get_comments_count_by_post(
+                session=session,
+                post_id=post_id
+            )
             
             # Calculate age in days
             age_days = (datetime.now(timezone.utc) - post.created_at).days

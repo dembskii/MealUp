@@ -45,7 +45,8 @@ def get_required_user_id(
 async def get_all_posts(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get all posts with pagination"""
     posts = await PostService.get_all_posts(session, skip, limit)
@@ -58,7 +59,8 @@ async def get_trending_posts(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     min_coefficient: float = Query(0.0, ge=0.0),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get trending posts sorted by trending coefficient"""
     posts = await PostService.get_trending_posts(session, skip, limit, min_coefficient)
@@ -69,7 +71,8 @@ async def get_trending_posts(
 @router.get("/posts/{post_id}", response_model=PostResponse, status_code=status.HTTP_200_OK)
 async def get_post_by_id(
     post_id: UUID,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Get a specific post by ID"""
     post = await PostService.get_post_by_id(session, post_id)
@@ -84,6 +87,7 @@ async def create_post(
     post_data: PostCreate,
     session: AsyncSession = Depends(get_session),
     author_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Create a new post"""
     # Konwersja na UUID (wymagane przez bazę danych)
@@ -112,6 +116,7 @@ async def update_post(
     post_data: PostUpdate,
     session: AsyncSession = Depends(get_session),
     author_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
 ):
     """Update an existing post"""
     existing_post = await PostService.get_post_by_id(session, post_id)
@@ -246,19 +251,19 @@ async def recalculate_all_trending(
 async def like_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    author_id: str = Depends(get_required_user_id),
+    user_id: str = Depends(get_required_user_id),
     token_payload: Dict = Depends(require_auth)
 ):
     """Like a post"""
     try:
-        uuid_author_id = UUID(str(author_id))
+        uuid_user_id = UUID(str(user_id))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
         )
     
-    success = await LikeService.track_post_like(session, post_id, uuid_author_id)
+    success = await LikeService.track_post_like(session, post_id, uuid_user_id)
     
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or already liked")
@@ -267,23 +272,23 @@ async def like_post(
 
 
 
-@router.post("/posts/{post_id}/unlike", response_model=dict, status_code=status.HTTP_200_OK)
+@router.delete("/posts/{post_id}/like", response_model=dict, status_code=status.HTTP_200_OK)
 async def unlike_post(
     post_id: UUID,
     session: AsyncSession = Depends(get_session),
-    author_id: str = Depends(get_required_user_id),
+    user_id: str = Depends(get_required_user_id),
     token_payload: Dict = Depends(require_auth)
 ):
     """Unlike a post"""
     try:
-        uuid_author_id = UUID(str(author_id))
+        uuid_user_id = UUID(str(user_id))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Invalid User ID format. Expected UUID, got: {author_id}"
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
         )
     
-    success = await LikeService.track_post_unlike(session, post_id, uuid_author_id)
+    success = await LikeService.track_post_unlike(session, post_id, uuid_user_id)
     
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found or not liked")
