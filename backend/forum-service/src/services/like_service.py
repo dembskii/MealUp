@@ -2,12 +2,15 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from uuid import UUID
 import logging
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import func
 
 from src.models.post import Post
 from src.models.post_like import PostLike
 from src.models.comment import Comment
+from src.models.comment_like import CommentLike
+
 
 
 logger = logging.getLogger(__name__)
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class LikeService:
-
+    #================= Track Post Like ==================#
     @staticmethod
     async def track_post_like(
         session: AsyncSession,
@@ -131,4 +134,126 @@ class LikeService:
             return count
         except Exception as e:
             logger.error(f"Error getting post likes count: {str(e)}")
+            return None
+
+
+
+    #================= Track Comment Like ==================#
+    @staticmethod
+    async def track_comment_like(
+        session: AsyncSession,
+        comment_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """Track a comment like"""
+        try:
+            statement = select(CommentLike).where(
+                CommentLike.comment_id == comment_id,
+                CommentLike.user_id == user_id
+            )
+            result = await session.exec(statement)
+            existing_like = result.first()
+            
+            if existing_like:
+                logger.info(f"User {user_id} already liked comment {comment_id}")
+                return False
+
+            comment_statement = select(Comment).where(Comment.id == comment_id)
+            comment_result = await session.exec(comment_statement)
+            comment = comment_result.first()
+            
+            if not comment:
+                logger.warning(f"Comment {comment_id} not found")
+                return False
+            
+            like = CommentLike(
+                comment_id=comment_id,
+                user_id=user_id,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(like)
+
+            comment.total_likes += 1
+            session.add(comment)
+            
+            await session.commit()
+            logger.info(f"User {user_id} liked comment {comment_id}, total likes: {comment.total_likes}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error tracking comment like: {str(e)}")
+            await session.rollback()
+            return False
+
+
+
+    @staticmethod
+    async def remove_comment_like(
+        session: AsyncSession,
+        comment_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """Remove a comment like"""
+        try:
+            # Find existing like
+            statement = select(CommentLike).where(
+                CommentLike.comment_id == comment_id,
+                CommentLike.user_id == user_id
+            )
+            result = await session.exec(statement)
+            existing_like = result.first()
+            
+            if not existing_like:
+                logger.info(f"User {user_id} has not liked comment {comment_id}")
+                return False
+            
+            comment_statement = select(Comment).where(Comment.id == comment_id)
+            comment_result = await session.exec(comment_statement)
+            comment = comment_result.first()
+            
+            if not comment:
+                logger.warning(f"Comment {comment_id} not found")
+                return False
+            
+            await session.delete(existing_like)
+            
+            if comment.total_likes > 0:
+                comment.total_likes -= 1
+                session.add(comment)
+            
+            await session.commit()
+
+            logger.info(f"User {user_id} unliked comment {comment_id}, total likes: {comment.total_likes}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error removing comment like: {str(e)}")
+            await session.rollback()
+            return False
+
+
+
+    @staticmethod
+    async def get_comment_likes_count(
+        session: AsyncSession,
+        comment_id: UUID
+    ) -> Optional[int]:
+        """Get like count for a comment"""
+        try:
+            exist = select(Comment).where(Comment.id == comment_id)
+            result = await session.exec(exist)
+            comment = result.first()
+
+            if not comment:
+                logger.warning(f"Comment {comment_id} not found when getting likes count")
+                return None
+            
+            statement = select(func.count(CommentLike.id)).where(CommentLike.comment_id == comment_id)
+            result = await session.exec(statement)
+            count = result.first() or 0
+            logger.info(f"Comment {comment_id} has {count} likes")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error getting comment likes count: {str(e)}")
             return None
