@@ -98,7 +98,6 @@ class ExerciseService:
         db = get_database()
         collection = db[settings.EXERCISES_COLLECTION]
         
-        # Check if exercise exists
         existing = await collection.find_one({"_id": exercise_id})
         if not existing:
             return None

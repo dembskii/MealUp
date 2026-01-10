@@ -67,12 +67,12 @@ class TrainingType(str, Enum):
 
 class SetUnit(str, Enum):
     """Enum for set measurement units"""
-    REPS = "reps"           # Number of repetitions
-    SECONDS = "seconds"     # Time in seconds (for holds, planks)
-    MINUTES = "minutes"     # Time in minutes
-    METERS = "meters"       # Distance in meters
-    KILOMETERS = "km"       # Distance in kilometers
-    CALORIES = "calories"   # Calories burned
+    REPS = "reps"
+    SECONDS = "seconds"
+    MINUTES = "minutes"
+    METERS = "meters"
+    KILOMETERS = "km"
+    CALORIES = "calories"
 
 
 class DayOfWeek(int, Enum):
@@ -349,7 +349,7 @@ class TrainingWithExercises(BaseModel):
     """Training session with full exercise details"""
     id: str = Field(alias="_id")
     name: str
-    exercises: List[dict]  # Full exercise data joined
+    exercises: List[dict]
     est_time: int
     day: DayOfWeek
     training_type: TrainingType

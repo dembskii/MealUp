@@ -44,7 +44,7 @@ async def _create_indexes():
         return
 
     try:
-        # Exercises collection indexes
+
         exercises_collection = _database[settings.EXERCISES_COLLECTION]
         await exercises_collection.create_index("name")
         await exercises_collection.create_index("body_part")
@@ -53,14 +53,12 @@ async def _create_indexes():
         await exercises_collection.create_index("_created_at")
         await exercises_collection.create_index([("name", 1), ("body_part", 1)])
 
-        # Trainings collection indexes
         trainings_collection = _database[settings.TRAININGS_COLLECTION]
         await trainings_collection.create_index("day")
         await trainings_collection.create_index("training_type")
         await trainings_collection.create_index("_created_at")
         await trainings_collection.create_index([("day", 1), ("training_type", 1)])
 
-        # Workout plans collection indexes
         workout_plans_collection = _database[settings.WORKOUT_PLANS_COLLECTION]
         await workout_plans_collection.create_index("trainer_id")
         await workout_plans_collection.create_index("clients")
