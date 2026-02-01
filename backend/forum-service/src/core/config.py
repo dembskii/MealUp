@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str
     POSTGRES_FORUM_DB: str
     FORUM_DATABASE_URL: str
+
+    RECIPE_SERVICE_URL: str
+    WORKOUT_SERVICE_URL: str
     
     #Redis
     AUTH_REDIS_PASSWORD: str
