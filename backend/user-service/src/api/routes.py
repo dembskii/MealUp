@@ -1,10 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, Cookie
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.main import get_session
 from src.models.model import User
 from src.services.user_service import UserService
 from src.validators.schema import UserResponse, UserUpdate, UserListResponse, UserCreate
-from typing import Optional
 from uuid import UUID
 from typing import Dict
 import logging
@@ -168,6 +167,25 @@ async def delete_user(
     except Exception as e:
         logger.error(f"Error deleting user: {str(e)}")
         raise HTTPException(status_code = 500, detail = "Failed to delete user")
+
+
+
+@router.get("/users/search", response_model=UserListResponse)
+async def search_users(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=50),
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Search users by username, email, first name, or last name"""
+    try:
+        users = await UserService.search_users(session, q, skip, limit)
+        return UserListResponse(total=len(users), items=users)
+    except Exception as e:
+        logger.error(f"Error searching users: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search users")
+
 
 
 

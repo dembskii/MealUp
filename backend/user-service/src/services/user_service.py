@@ -1,4 +1,4 @@
-from sqlmodel import select
+from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.models.model import User, UserRole
 from typing import Optional, List
@@ -151,3 +151,34 @@ class UserService:
             logger.error(f"Error deleting user: {str(e)}")
             await session.rollback()
             return False
+
+
+    @staticmethod
+    async def search_users(
+        session: AsyncSession,
+        query: str,
+        skip: int = 0,
+        limit: int = 10
+    ) -> List[User]:
+        """Search users using PostgreSQL ILIKE"""
+        try:
+            like_query = f"%{query}%"
+            
+            statement = select(User).where(
+                or_(
+                    User.username.ilike(like_query),
+                    User.email.ilike(like_query),
+                    User.first_name.ilike(like_query),
+                    User.last_name.ilike(like_query)
+                )
+            ).offset(skip).limit(limit)
+            
+            result = await session.exec(statement)
+            users = result.all()
+            
+            logger.info(f"Found {len(users)} users matching query '{query}'")
+            return users
+            
+        except Exception as e:
+            logger.error(f"Error searching users: {str(e)}")
+            return []
