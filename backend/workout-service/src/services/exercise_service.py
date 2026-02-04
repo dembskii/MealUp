@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 class ExerciseService:
     """Service for exercise CRUD operations"""
-    
+
+
     @staticmethod
     async def create_exercise(exercise_data: ExerciseCreate) -> Exercise:
         """Create a new exercise"""
@@ -37,7 +38,8 @@ class ExerciseService:
 
         logger.info(f"Created exercise {exercise.id}: {exercise.name}")
         return exercise
-    
+
+
     @staticmethod
     async def get_exercise(exercise_id: str) -> Optional[Exercise]:
         """Get an exercise by ID"""
@@ -48,7 +50,8 @@ class ExerciseService:
         if exercise_data:
             return Exercise(**exercise_data)
         return None
-    
+
+
     @staticmethod
     async def get_exercises(
         skip: int = 0,
@@ -77,7 +80,8 @@ class ExerciseService:
         exercises = await cursor.to_list(length=limit)
 
         return [Exercise(**exercise) for exercise in exercises]
-    
+
+
     @staticmethod
     async def get_exercises_by_ids(exercise_ids: List[str]) -> List[Exercise]:
         """Get multiple exercises by their IDs"""
@@ -88,7 +92,8 @@ class ExerciseService:
         exercises = await cursor.to_list(length=len(exercise_ids))
         
         return [Exercise(**exercise) for exercise in exercises]
-    
+
+
     @staticmethod
     async def update_exercise(
         exercise_id: str,
@@ -119,7 +124,8 @@ class ExerciseService:
             return Exercise(**updated_exercise)
         
         return Exercise(**existing)
-    
+
+
     @staticmethod
     async def delete_exercise(exercise_id: str) -> bool:
         """Delete an exercise"""
@@ -132,7 +138,8 @@ class ExerciseService:
             logger.info(f"Deleted exercise {exercise_id}")
             return True
         return False
-    
+
+
     @staticmethod
     async def count_exercises(
         body_part: Optional[BodyPart] = None,
@@ -154,3 +161,49 @@ class ExerciseService:
         
         count = await collection.count_documents(query)
         return count
+
+
+    @staticmethod
+    async def search_exercises(
+        query: str,
+        tags: Optional[List[str]] = None,
+        body_part: Optional[BodyPart] = None,
+        advancement: Optional[Advancement] = None,
+        category: Optional[ExerciseCategory] = None,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[Exercise]:
+        """Search exercises with MongoDB filters"""
+        db = get_database()
+        collection = db[settings.EXERCISES_COLLECTION]
+        
+        filters: dict[str, Any] = {}
+        
+        # Text search
+        if query:
+            filters["$or"] = [
+                {"name": {"$regex": query, "$options": "i"}},
+                {"description": {"$regex": query, "$options": "i"}}
+            ]
+        
+        # Filter by tags
+        if tags:
+            filters["tags"] = {"$in": tags}
+        
+        # Filter by body part
+        if body_part:
+            filters["body_part"] = body_part.value
+        
+        # Filter by advancement
+        if advancement:
+            filters["advancement"] = advancement.value
+        
+        # Filter by category
+        if category:
+            filters["category"] = category.value
+        
+        cursor = collection.find(filters).sort("name", 1).skip(skip).limit(limit)
+        exercises = await cursor.to_list(length=limit)
+        
+        logger.info(f"Found {len(exercises)} exercises for query '{query}'")
+        return [Exercise(**exercise) for exercise in exercises]
