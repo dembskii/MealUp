@@ -218,5 +218,29 @@ async def unlike_recipe(
     return recipe
 
 
+@router.get("/search", response_model=list[RecipeResponse])
+async def search_recipes(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query"),
+    tags: Optional[list[str]] = Query(None, description="Filter by tags"),
+    author_id: Optional[str] = Query(None, description="Filter by author"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Search recipes by name, description, tags, or author"""
+    try:
+        recipes = await RecipeService.search_recipes(
+            query=q,
+            tags=tags,
+            author_id=author_id,
+            skip=skip,
+            limit=limit
+        )
+        return recipes
+    except Exception as e:
+        logger.error(f"Error searching recipes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search recipes")
+
+
 
 

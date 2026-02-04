@@ -247,3 +247,39 @@ class RecipeService:
                 return None
             return Recipe(**updated_recipe)
         return None
+
+
+    @staticmethod
+    async def search_recipes(
+        query: str,
+        tags: Optional[List[str]] = None,
+        author_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[Recipe]:
+        """Search recipes with MongoDB text search and filters"""
+        db = get_database()
+        collection = db[settings.RECIPES_COLLECTION]
+        
+        filters: dict[str, Any] = {}
+        
+        # Text search using MongoDB regex
+        if query:
+            filters["$or"] = [
+                {"name": {"$regex": query, "$options": "i"}},
+                {"prepare_instruction": {"$regex": query, "$options": "i"}}
+            ]
+        
+        # Filter by tags
+        if tags:
+            filters["tags"] = {"$in": tags}
+        
+        # Filter by author
+        if author_id:
+            filters["author_id"] = author_id
+        
+        cursor = collection.find(filters).sort("_created_at", -1).skip(skip).limit(limit)
+        recipes = await cursor.to_list(length=limit)
+        
+        logger.info(f"Found {len(recipes)} recipes for query '{query}'")
+        return [Recipe(**recipe) for recipe in recipes]
