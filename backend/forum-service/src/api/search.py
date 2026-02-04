@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Header, status, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from typing import List, Dict, Optional
-
+import logging
 from src.db.main import get_session
 from src.services.search_service import SearchService
 from src.validators.search import (
@@ -9,8 +9,10 @@ from src.validators.search import (
     SearchResponse, SearchSuggestionsResponse,
     PostSearchResult, TagSuggestion
 )
-
 from common.auth_guard import require_auth
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -54,21 +56,28 @@ async def search(
     - **trending**: Highest trending coefficient first
     - **most_liked**: Most liked first
     """
-    search_query = SearchQuery(
-        query=q,
-        category=category,
-        tags=tags,
-        author_id=author_id,
-        sort_by=sort_by,
-        skip=skip,
-        limit=limit
-    )
-    
-    return await SearchService.search(
-        session=session,
-        search_query=search_query,
-        auth_token=auth_header
-    )
+    try:
+        search_query = SearchQuery(
+            query=q,
+            category=category,
+            tags=tags,
+            author_id=author_id,
+            sort_by=sort_by,
+            skip=skip,
+            limit=limit
+        )
+        
+        return await SearchService.search(
+            session=session,
+            search_query=search_query,
+            auth_token=auth_header
+        )
+    except ValueError as e:
+        logger.error(f"Validation error in search: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error performing search: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to perform search")
 
 
 
@@ -83,11 +92,18 @@ async def search_post(
     Perform full-text search with request body.
     Alternative to GET /search for complex queries.
     """
-    return await SearchService.search(
-        session=session,
-        search_query=search_query,
-        auth_token=auth_header
-    )
+    try:
+        return await SearchService.search(
+            session=session,
+            search_query=search_query,
+            auth_token=auth_header
+        )
+    except ValueError as e:
+        logger.error(f"Validation error in search_post: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error performing search_post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to perform search")
 
 
 
@@ -103,11 +119,15 @@ async def get_search_suggestions(
     Get search autocomplete suggestions.
     Returns matching post titles and popular tags.
     """
-    return await SearchService.get_search_suggestions(
-        session=session,
-        query=q,
-        limit=limit
-    )
+    try:
+        return await SearchService.get_search_suggestions(
+            session=session,
+            query=q,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error getting search suggestions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get suggestions")
 
 
 
@@ -123,11 +143,15 @@ async def get_popular_tags(
     Get popular tags from forum posts.
     Optionally filter by partial tag name.
     """
-    return await SearchService.get_popular_tags(
-        session=session,
-        query=q,
-        limit=limit
-    )
+    try:
+        return await SearchService.get_popular_tags(
+            session=session,
+            query=q,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"Error getting popular tags: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get popular tags")
 
 
 
@@ -143,13 +167,22 @@ async def search_by_tag(
     """
     Get all posts with a specific tag.
     """
-    return await SearchService.search_by_tag(
-        session=session,
-        tag=tag,
-        sort_by=sort_by,
-        skip=skip,
-        limit=limit
-    )
+    try:
+        if not tag or len(tag.strip()) == 0:
+            raise HTTPException(status_code=400, detail="Tag cannot be empty")
+        
+        return await SearchService.search_by_tag(
+            session=session,
+            tag=tag,
+            sort_by=sort_by,
+            skip=skip,
+            limit=limit
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching by tag: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search by tag")
 
 
 
@@ -169,12 +202,19 @@ async def search_posts_only(
     Search only in forum posts.
     Faster than general search when you only need posts.
     """
-    return await SearchService._search_posts(
-        session=session,
-        query=q,
-        tags=tags,
-        author_id=author_id,
-        sort_by=sort_by,
-        skip=skip,
-        limit=limit
-    )
+    try:
+        return await SearchService._search_posts(
+            session=session,
+            query=q,
+            tags=tags,
+            author_id=author_id,
+            sort_by=sort_by,
+            skip=skip,
+            limit=limit
+        )
+    except ValueError as e:
+        logger.error(f"Validation error searching posts: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error searching posts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search posts")
