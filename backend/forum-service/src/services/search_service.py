@@ -1,12 +1,10 @@
 from sqlmodel import select, text
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy import func, desc, or_, and_, cast, String
-from sqlalchemy.dialects.postgresql import ARRAY
-from typing import Optional, List, Tuple
+from sqlalchemy import func, desc, or_, and_
+from typing import Optional, List
 from uuid import UUID
 import logging
 import httpx
-from datetime import datetime, timezone
 
 from src.models.post import Post
 from src.models.comment import Comment
@@ -140,10 +138,10 @@ class SearchService:
         try:
             like_query = f"%{query}%"
             
-            # Budujemy zapytanie dynamicznie
+            # We build the query dynamically
             conditions = []
             
-            # Bazowe wyszukiwanie tekstowe
+            # Search in title and content
             base_condition = or_(
                 Post.title.ilike(like_query),
                 Post.content.ilike(like_query)
@@ -152,7 +150,7 @@ class SearchService:
             
             # Tag filter
             if tags:
-                # Sprawdź czy post ma przynajmniej jeden z tagów
+                # Postgres array contains operator: checks if any of the specified tags are in the post's tags array
                 tag_conditions = [Post.tags.contains([tag]) for tag in tags]
                 conditions.append(or_(*tag_conditions))
             
@@ -164,10 +162,10 @@ class SearchService:
                 except ValueError:
                     logger.warning(f"Invalid author_id format: {author_id}")
             
-            # Buduj zapytanie
+            # Building the final query
             statement = select(Post).where(and_(*conditions))
             
-            # Sortowanie
+            # Sorting
             if sort_by == SearchSortBy.NEWEST:
                 statement = statement.order_by(desc(Post.created_at))
             elif sort_by == SearchSortBy.TRENDING:
@@ -177,19 +175,19 @@ class SearchService:
             else:
                 statement = statement.order_by(desc(Post.created_at))
             
-            # Paginacja
+            # Pagination
             statement = statement.offset(skip).limit(limit)
             
-            # Wykonaj zapytanie
+            # Execute the query
             result = await session.exec(statement)
             posts_db = result.all()
             
             logger.info(f"Found {len(posts_db)} posts for query '{query}'")
             
-            # Konwertuj na PostSearchResult
+            # Map database posts to search results, including comment count
             posts = []
             for post in posts_db:
-                # Pobierz liczbę komentarzy
+                # Simplified query to count comments
                 comment_stmt = select(func.count(Comment.id)).where(Comment.post_id == post.id)
                 comment_result = await session.exec(comment_stmt)
                 comments_count = comment_result.first() or 0
@@ -302,7 +300,7 @@ class SearchService:
                     recipes = []
                     
                     for recipe in recipes_data:
-                        # Filtruj lokalnie po nazwie/opisie
+                        # Filter by name/description if query is specified
                         name = recipe.get("name", "").lower()
                         description = recipe.get("description", "").lower()
                         search_lower = query.lower()
@@ -379,7 +377,7 @@ class SearchService:
                     workouts = []
                     
                     for workout in workouts_data:
-                        # Filtruje lokalnie po nazwie/opisie
+                        # Filter by name/description if query is specified
                         name = workout.get("name", "").lower()
                         description = workout.get("description", "").lower()
                         search_lower = query.lower()
@@ -403,7 +401,7 @@ class SearchService:
                             image_url=None
                         ))
                         
-                        # Ogranicz do limitu
+                        # Stop if we have enough results after filtering
                         if len(workouts) >= limit:
                             break
                     
@@ -532,7 +530,6 @@ class SearchService:
                 SearchSortBy.MOST_LIKED: "total_likes DESC, created_at DESC"
             }.get(sort_by, "created_at DESC")
             
-            # ZMIENIONE: Uproszczone
             tag_query = text(f"""
                 SELECT 
                     id::text,
