@@ -103,6 +103,44 @@ async def delete_exercise(exercise_id: str):
     return None
 
 
+@router.get("/exercises/search", response_model=list[ExerciseResponse])
+async def search_exercises(
+    q: str = Query(..., min_length=1, max_length=200, description="Search query"),
+    tags: Optional[List[str]] = Query(None, description="Filter by tags"),
+    body_part: Optional[BodyPart] = Query(None),
+    advancement: Optional[Advancement] = Query(None),
+    category: Optional[ExerciseCategory] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100)
+):
+    """Search exercises by name, description, or filters"""
+    try:
+        exercises = await ExerciseService.search_exercises(
+            query=q,
+            tags=tags,
+            body_part=body_part,
+            advancement=advancement,
+            category=category,
+            skip=skip,
+            limit=limit
+        )
+        return exercises
+    except Exception as e:
+        logger.error(f"Error searching exercises: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search exercises")
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ============ ENUM ENDPOINTS (for frontend dropdown values) ============
 
 @router.get("/enums/body-parts")
