@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 
 class SearchService:
     """Service for full-text search across forum content"""
-    
-    RECIPE_SERVICE_URL = settings.RECIPE_SERVICE_URL
-    WORKOUT_SERVICE_URL = settings.WORKOUT_SERVICE_URL
-    
+
     @staticmethod
     async def search(
         session: AsyncSession,
@@ -223,43 +220,66 @@ class SearchService:
         skip: int = 0,
         limit: int = 20
     ) -> List[AuthorSearchResult]:
-        """
-        Search for authors based on their posts.
-        Aggregates author statistics from posts table.
-        """
+        """Search authors via User Service and aggregate their post stats"""
         try:
-            author_query = text("""
-                SELECT 
-                    author_id::text,
-                    COUNT(DISTINCT id)::integer as posts_count,
-                    COALESCE(SUM(total_likes), 0)::integer as total_likes
-                FROM posts
-                WHERE author_id::text ILIKE :like_query
-                GROUP BY author_id
-                ORDER BY total_likes DESC, posts_count DESC
-                OFFSET :skip LIMIT :limit
-            """)
-            
-            result = await session.exec(author_query, {  # type: ignore
-                "like_query": f"%{query}%",
-                "skip": skip,
-                "limit": limit
-            })
-            rows = result.all()
-            
-            authors = [
-                AuthorSearchResult(
-                    id=row[0],
-                    name=f"User {row[0][:8]}",
-                    posts_count=row[1],
-                    total_likes=row[2]
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+                response = await client.get(
+                    f"{settings.USER_SERVICE_URL}/user/users/search",
+                    params={"q": query, "skip": skip, "limit": limit}
                 )
-                for row in rows
-            ]
-            
-            logger.info(f"Found {len(authors)} authors matching query '{query}'")
-            return authors
-            
+                
+                if response.status_code != 200:
+                    logger.warning(f"User service returned status {response.status_code}")
+                    return []
+                
+                users_response = response.json()
+                users = users_response.get("items", [])
+                
+                if not users:
+                    return []
+                
+                # Get post statistics for found users
+                authors = []
+                for user in users:
+                    user_id = user.get("uid")
+                    
+                    # Query posts statistics
+                    stats_query = text("""
+                        SELECT 
+                            COUNT(DISTINCT id)::integer as posts_count,
+                            COALESCE(SUM(total_likes), 0)::integer as total_likes
+                        FROM posts
+                        WHERE author_id = CAST(:author_id AS uuid)
+                    """)
+                    
+                    result = await session.exec(stats_query, {"author_id": user_id})  # type: ignore
+                    stats = result.first()
+                    
+                    # Build author name
+                    first_name = user.get('first_name', '').strip()
+                    last_name = user.get('last_name', '').strip()
+                    username = user.get('username', 'Unknown')
+                    
+                    if first_name and last_name:
+                        display_name = f"{first_name} {last_name}"
+                    elif first_name:
+                        display_name = first_name
+                    else:
+                        display_name = username
+                    
+                    authors.append(AuthorSearchResult(
+                        id=str(user_id),
+                        name=display_name,
+                        posts_count=stats[0] if stats else 0,
+                        total_likes=stats[1] if stats else 0
+                    ))
+                
+                logger.info(f"Found {len(authors)} authors matching query '{query}'")
+                return authors
+                
+        except httpx.TimeoutException:
+            logger.warning("User service request timed out")
+            return []
         except Exception as e:
             logger.error(f"Error in _search_authors: {str(e)}", exc_info=True)
             return []
@@ -274,10 +294,7 @@ class SearchService:
         limit: int = 20,
         auth_token: Optional[str] = None
     ) -> List[RecipeSearchResult]:
-        """
-        Search recipes from Recipe Service (MongoDB).
-        Makes HTTP call to recipe-service search endpoint.
-        """
+        """Search recipes via Recipe Service search endpoint"""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
                 headers = {}
@@ -285,12 +302,16 @@ class SearchService:
                     headers["Authorization"] = auth_token
                 
                 params = {
+                    "q": query,
                     "skip": skip,
-                    "limit": limit * 2  
+                    "limit": limit
                 }
                 
+                if tags:
+                    params["tags"] = tags
+                
                 response = await client.get(
-                    f"{SearchService.RECIPE_SERVICE_URL}/recipes",
+                    f"{settings.RECIPE_SERVICE_URL}/search",
                     params=params,
                     headers=headers
                 )
@@ -300,33 +321,16 @@ class SearchService:
                     recipes = []
                     
                     for recipe in recipes_data:
-                        # Filter by name/description if query is specified
-                        name = recipe.get("name", "").lower()
-                        description = recipe.get("description", "").lower()
-                        search_lower = query.lower()
-                        
-                        if search_lower not in name and search_lower not in description:
-                            continue
-                        
-                        # Filter by tags if specified
-                        recipe_tags = recipe.get("tags", [])
-                        if tags and not any(t in recipe_tags for t in tags):
-                            continue
-                            
                         recipes.append(RecipeSearchResult(
                             id=str(recipe.get("_id", "")),
                             name=recipe.get("name", ""),
-                            description=recipe.get("description", ""),
-                            author_id=str(recipe.get("author_id", "")) if recipe.get("author_id") else None,
-                            prep_time=recipe.get("prep_time"),
-                            difficulty=recipe.get("difficulty"),
-                            tags=recipe_tags,
-                            image_url=recipe.get("image_url")
+                            description=recipe.get("prepare_instruction", "")[:200] if recipe.get("prepare_instruction") else "",
+                            author_id=str(recipe.get("author_id")) if recipe.get("author_id") else None,
+                            prep_time=recipe.get("time_to_prepare"),
+                            difficulty=None,
+                            tags=recipe.get("tags", []),
+                            image_url=recipe.get("images", [None])[0] if recipe.get("images") else None
                         ))
-                        
-
-                        if len(recipes) >= limit:
-                            break
                     
                     logger.info(f"Found {len(recipes)} recipes matching query '{query}'")
                     return recipes
@@ -351,10 +355,7 @@ class SearchService:
         limit: int = 20,
         auth_token: Optional[str] = None
     ) -> List[WorkoutSearchResult]:
-        """
-        Search workouts from Workout Service (MongoDB).
-        Makes HTTP call to workout-service search endpoint.
-        """
+        """Search workouts via Workout Service search endpoint"""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
                 headers = {}
@@ -362,12 +363,16 @@ class SearchService:
                     headers["Authorization"] = auth_token
                 
                 params = {
+                    "q": query,
                     "skip": skip,
-                    "limit": limit * 2
+                    "limit": limit
                 }
                 
+                if tags:
+                    params["tags"] = tags
+                
                 response = await client.get(
-                    f"{SearchService.WORKOUT_SERVICE_URL}/workouts/exercises",
+                    f"{settings.WORKOUT_SERVICE_URL}/exercises/search",
                     params=params,
                     headers=headers
                 )
@@ -377,18 +382,6 @@ class SearchService:
                     workouts = []
                     
                     for workout in workouts_data:
-                        # Filter by name/description if query is specified
-                        name = workout.get("name", "").lower()
-                        description = workout.get("description", "").lower()
-                        search_lower = query.lower()
-                        
-                        if search_lower not in name and search_lower not in description:
-                            continue
-                        
-                        workout_tags = workout.get("tags", [])
-                        if tags and not any(t in workout_tags for t in tags):
-                            continue
-                        
                         workouts.append(WorkoutSearchResult(
                             id=str(workout.get("_id", "")),
                             name=workout.get("name", ""),
@@ -397,13 +390,9 @@ class SearchService:
                             duration=None,
                             difficulty=workout.get("advancement"),
                             workout_type=workout.get("category"),
-                            tags=workout_tags,
+                            tags=workout.get("tags", []),
                             image_url=None
                         ))
-                        
-                        # Stop if we have enough results after filtering
-                        if len(workouts) >= limit:
-                            break
                     
                     logger.info(f"Found {len(workouts)} workouts matching query '{query}'")
                     return workouts

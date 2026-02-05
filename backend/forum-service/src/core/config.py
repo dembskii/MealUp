@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     RECIPE_SERVICE_URL: str
     WORKOUT_SERVICE_URL: str
+    USER_SERVICE_URL: str
     
     #Redis
     AUTH_REDIS_PASSWORD: str
