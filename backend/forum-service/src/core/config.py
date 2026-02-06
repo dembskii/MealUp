@@ -12,7 +12,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:8000",
         "http://localhost:8001",
-        "http://localhost:8002"
+        "http://localhost:8002",
+        "http://localhost:8003",
+        "http://localhost:8004"
     ]
 
     #Postgres
@@ -23,6 +25,7 @@ class Settings(BaseSettings):
 
     RECIPE_SERVICE_URL: str
     WORKOUT_SERVICE_URL: str
+    USER_SERVICE_URL: str
     
     #Redis
     AUTH_REDIS_PASSWORD: str

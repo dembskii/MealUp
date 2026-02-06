@@ -135,6 +135,9 @@ services:
       - AUTH0_DOMAIN=${AUTH0_DOMAIN}
       - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
       - ALGORITHMS=${ALGORITHMS}
+      - RECIPE_SERVICE_URL=${RECIPE_SERVICE_URL}
+      - WORKOUT_SERVICE_URL=${WORKOUT_SERVICE_URL}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
     depends_on:
       shared-postgres-db:
         condition: service_healthy

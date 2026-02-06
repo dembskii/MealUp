@@ -367,7 +367,7 @@ class SearchService:
                 }
                 
                 response = await client.get(
-                    f"{SearchService.WORKOUT_SERVICE_URL}/workouts/exercises",
+                    f"{SearchService.WORKOUT_SERVICE_URL}/exercises",
                     params=params,
                     headers=headers
                 )
