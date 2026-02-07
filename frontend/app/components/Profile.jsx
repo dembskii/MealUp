@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
 import {
@@ -43,7 +43,9 @@ export default function Profile() {
   const [userProfile, setUserProfile] = useState(null);
   const [myRecipes, setMyRecipes] = useState([]);
   const [ingredientMap, setIngredientMap] = useState({});
+  const [allIngredients, setAllIngredients] = useState([]);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [editingRecipe, setEditingRecipe] = useState(null);
   const [myPlans, setMyPlans] = useState([]);
   const [myTrainings, setMyTrainings] = useState([]);
   const [workoutsLoading, setWorkoutsLoading] = useState(true);
@@ -70,6 +72,26 @@ export default function Profile() {
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerBodyPart, setPickerBodyPart] = useState('ALL');
   const [planPickerSearch, setPlanPickerSearch] = useState('');
+
+  // Recipe edit ingredient picker state
+  const [editIngDropdownOpen, setEditIngDropdownOpen] = useState({});
+  const [editIngSearchTerms, setEditIngSearchTerms] = useState({});
+  const editIngDropdownRefs = useRef({});
+
+  // Close ingredient dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      const openKeys = Object.keys(editIngDropdownOpen).filter(k => editIngDropdownOpen[k]);
+      if (openKeys.length === 0) return;
+      for (const key of openKeys) {
+        if (editIngDropdownRefs.current[key] && !editIngDropdownRefs.current[key].contains(e.target)) {
+          setEditIngDropdownOpen(prev => ({ ...prev, [key]: false }));
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editIngDropdownOpen]);
 
   const [loading, setLoading] = useState(true);
   const [recipesLoading, setRecipesLoading] = useState(true);
@@ -129,7 +151,11 @@ export default function Profile() {
         map[ing.id || ing._id] = ing;
       });
       setIngredientMap(map);
-      // 4. Fetch workout plans, trainings, and exercises (same pattern as WorkoutsView)
+
+
+      setAllIngredients(ingredientsRes.data);
+      // 4. Fetch workout plans, trainings, and exercises (independently so one failure doesn't block others)
+
       setWorkoutsLoading(true);
       try {
         // Fetch exercises first — build the map before populating trainings
@@ -357,13 +383,36 @@ export default function Profile() {
     }
   };
 
+  const CAPACITY_UNITS = [
+    { value: 'g', label: 'g' }, { value: 'kg', label: 'kg' }, { value: 'ml', label: 'ml' },
+    { value: 'l', label: 'l' }, { value: 'tsp', label: 'tsp' }, { value: 'tbsp', label: 'tbsp' },
+    { value: 'cup', label: 'cup' }, { value: 'oz', label: 'oz' }, { value: 'lb', label: 'lb' }, { value: 'pcs', label: 'pcs' },
+  ];
+
+  const toGrams = (quantity, capacity) => {
+    switch (capacity) {
+      case 'kg': return quantity * 1000;
+      case 'ml': return quantity;
+      case 'l': return quantity * 1000;
+      case 'oz': return quantity * 28.35;
+      case 'lb': return quantity * 453.6;
+      case 'tsp': return quantity * 5;
+      case 'tbsp': return quantity * 15;
+      case 'cup': return quantity * 240;
+      case 'pcs': return quantity * 100;
+      default: return quantity;
+    }
+  };
+
   const calculateMacros = (recipe) => {
-    let calories = 0, protein = 0, carbs = 0, fat = 0;
+    let calories = 0, protein = 0, carbs = 0, fat = 0, totalWeight = 0;
     if (recipe.ingredients) {
       recipe.ingredients.forEach(item => {
         const ing = ingredientMap[item.ingredient_id];
+        const weightG = toGrams(item.quantity || 0, item.capacity);
+        totalWeight += weightG;
         if (ing?.macro_per_hundred) {
-          const factor = (item.quantity || 0) / 100;
+          const factor = weightG / 100;
           calories += (ing.macro_per_hundred.calories || 0) * factor;
           protein += (ing.macro_per_hundred.proteins || 0) * factor;
           carbs += (ing.macro_per_hundred.carbs || 0) * factor;
@@ -371,12 +420,11 @@ export default function Profile() {
         }
       });
     }
-    return {
-      calories: Math.round(calories),
-      protein: Math.round(protein),
-      carbs: Math.round(carbs),
-      fat: Math.round(fat),
-    };
+    if (totalWeight > 0) {
+      const norm = 100 / totalWeight;
+      return { calories: Math.round(calories * norm), protein: Math.round(protein * norm), carbs: Math.round(carbs * norm), fat: Math.round(fat * norm) };
+    }
+    return { calories: 0, protein: 0, carbs: 0, fat: 0 };
   };
 
   const formatTime = (seconds) => {
@@ -410,6 +458,40 @@ export default function Profile() {
     } catch (err) {
       console.error('Error deleting recipe:', err);
       alert(err.response?.data?.detail || 'Failed to delete recipe.');
+    }
+  };
+
+  const handleStartEditRecipe = (recipe) => {
+    setEditingRecipe({
+      _id: recipe._id,
+      prepare_instruction: recipe.prepare_instruction || [],
+      time_to_prepare: recipe.time_to_prepare || 1800,
+      ingredients: recipe.ingredients?.map(i => ({ ...i })) || [],
+      images: recipe.images ? [...recipe.images] : [],
+    });
+    setEditIngDropdownOpen({});
+    setEditIngSearchTerms({});
+    setSelectedRecipe(null);
+  };
+
+  const handleSaveEditRecipe = async () => {
+    if (!editingRecipe) return;
+    setIsEditLoading(true);
+    try {
+      const payload = {
+        prepare_instruction: editingRecipe.prepare_instruction,
+        time_to_prepare: editingRecipe.time_to_prepare,
+        ingredients: editingRecipe.ingredients.filter(i => i.ingredient_id && i.quantity > 0),
+        images: editingRecipe.images,
+      };
+      const { data } = await recipeApi.put(`/${editingRecipe._id}`, payload);
+      setMyRecipes(prev => prev.map(r => r._id === data._id ? data : r));
+      setEditingRecipe(null);
+    } catch (err) {
+      console.error('Error updating recipe:', err);
+      alert(err.response?.data?.detail || 'Failed to update recipe.');
+    } finally {
+      setIsEditLoading(false);
     }
   };
 
@@ -478,7 +560,7 @@ export default function Profile() {
           <h4 className="font-bold text-slate-800 dark:text-white text-sm mb-3 line-clamp-1">{recipe.name}</h4>
           <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
             <div className="flex items-center gap-1"><Clock className="w-3 h-3 text-brand-500" /><span>{formatTime(recipe.time_to_prepare)}</span></div>
-            <div className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /><span>{macros.calories} kcal</span></div>
+            <div className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /><span>{macros.calories} kcal/100g</span></div>
           </div>
           <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] text-slate-400">
             <span>P: {macros.protein}g</span>
@@ -1217,8 +1299,11 @@ export default function Profile() {
                     onError={(e) => { e.target.src = 'https://picsum.photos/800/500?grayscale'; }} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   <div className="absolute top-6 right-6 flex gap-2">
+                    <button onClick={() => handleStartEditRecipe(selectedRecipe)} className="p-2 bg-brand-500/70 hover:bg-brand-500 text-white rounded-full transition-colors backdrop-blur-md border border-white/10" title="Edit recipe">
+                      <Edit3 className="w-5 h-5" />
+                    </button>
                     <button onClick={() => handleDelete(selectedRecipe._id)} className="p-2 bg-red-500/70 hover:bg-red-500 text-white rounded-full transition-colors backdrop-blur-md border border-white/10" title="Delete recipe">
-                      <X className="w-5 h-5" />
+                      <Trash2 className="w-5 h-5" />
                     </button>
                     <button onClick={() => setSelectedRecipe(null)} className="p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors backdrop-blur-md border border-white/10">
                       <X className="w-6 h-6" />
@@ -1243,7 +1328,7 @@ export default function Profile() {
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-8 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="flex gap-4 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 items-center justify-around">
-                        <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Calories</p>
+                        <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Cal/100g</p>
                           <div className="flex items-center gap-1.5 justify-center"><div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-full text-orange-500"><Flame className="w-4 h-4" /></div><span className="text-lg font-bold text-slate-800 dark:text-white">{macros.calories}</span></div>
                         </div>
                         <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
@@ -1259,9 +1344,9 @@ export default function Profile() {
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-500/10 text-center"><p className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase mb-1">Protein</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.protein}g</p></div>
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-500/10 text-center"><p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">Carbs</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.carbs}g</p></div>
-                        <div className="p-3 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-500/10 text-center"><p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase mb-1">Fat</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.fat}g</p></div>
+                        <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-500/10 text-center"><p className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase mb-1">Protein/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.protein}g</p></div>
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-500/10 text-center"><p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">Carbs/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.carbs}g</p></div>
+                        <div className="p-3 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-500/10 text-center"><p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase mb-1">Fat/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.fat}g</p></div>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
@@ -1296,6 +1381,186 @@ export default function Profile() {
             </div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* Recipe Edit Modal */}
+      <AnimatePresence>
+        {editingRecipe && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingRecipe(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-3xl glass-panel bg-white/95 dark:bg-slate-900/95 backdrop-blur-3xl rounded-[2.5rem] relative z-10 flex flex-col max-h-[90vh] shadow-2xl overflow-hidden border border-white/50 dark:border-white/10">
+              <div className="p-8 border-b border-slate-200 dark:border-white/10 flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3"><Edit3 className="w-6 h-6 text-brand-500" /> Edit Recipe</h2>
+                <button onClick={() => setEditingRecipe(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                {/* Prep time */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Prep Time (minutes)</label>
+                  <input type="number" min="1" value={Math.round((editingRecipe.time_to_prepare || 0) / 60)}
+                    onChange={(e) => setEditingRecipe({ ...editingRecipe, time_to_prepare: Math.max(1, parseInt(e.target.value) || 1) * 60 })}
+                    className="w-full p-3 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                </div>
+
+                {/* Ingredients */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 block">
+                    Ingredients ({editingRecipe.ingredients.length})
+                  </label>
+                  <div className="space-y-3">
+                    {editingRecipe.ingredients.map((ing, i) => {
+                      const selectedName = (() => {
+                        if (!ing.ingredient_id) return null;
+                        const found = allIngredients.find(a => (a.id || a._id) === ing.ingredient_id);
+                        return found?.name || ingredientMap[ing.ingredient_id]?.name || null;
+                      })();
+                      const isOpen = editIngDropdownOpen[i] || false;
+                      const searchTerm = editIngSearchTerms[i]?.toLowerCase() || '';
+                      const filteredIngredients = searchTerm
+                        ? allIngredients.filter(a => a.name.toLowerCase().includes(searchTerm))
+                        : allIngredients;
+
+                      return (
+                        <div key={i} className="p-4 bg-white/40 dark:bg-white/5 rounded-2xl border border-white/50 dark:border-white/10 space-y-3">
+                          {/* Ingredient Selector */}
+                          <div className="relative" ref={(el) => (editIngDropdownRefs.current[i] = el)}>
+                            <button type="button"
+                              onClick={() => setEditIngDropdownOpen(prev => ({ ...prev, [i]: !isOpen }))}
+                              className="w-full flex items-center justify-between p-3 liquid-input rounded-xl text-left">
+                              <span className={`text-sm font-medium ${selectedName ? 'text-slate-800 dark:text-white' : 'text-slate-400'}`}>
+                                {selectedName || 'Select ingredient...'}
+                              </span>
+                              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            <AnimatePresence>
+                              {isOpen && (
+                                <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
+                                  className="absolute top-full left-0 right-0 mt-1 z-20 glass-panel bg-white/95 dark:bg-slate-900/95 rounded-xl overflow-hidden shadow-xl border border-white/50 dark:border-white/10">
+                                  <div className="p-2 border-b border-slate-100 dark:border-white/10">
+                                    <div className="relative">
+                                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                                      <input type="text" placeholder="Search ingredients..."
+                                        value={editIngSearchTerms[i] || ''}
+                                        onChange={(e) => setEditIngSearchTerms(prev => ({ ...prev, [i]: e.target.value }))}
+                                        className="w-full pl-9 pr-3 py-2 text-sm liquid-input rounded-lg outline-none"
+                                        autoFocus />
+                                    </div>
+                                  </div>
+                                  <div className="max-h-40 overflow-y-auto">
+                                    {filteredIngredients.length > 0 ? (
+                                      filteredIngredients.map((ingredient) => {
+                                        const ingId = ingredient.id || ingredient._id;
+                                        return (
+                                          <button type="button" key={ingId}
+                                            onClick={() => {
+                                              const updated = [...editingRecipe.ingredients];
+                                              updated[i] = { ...updated[i], ingredient_id: ingId };
+                                              setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                                              setEditIngDropdownOpen(prev => ({ ...prev, [i]: false }));
+                                              setEditIngSearchTerms(prev => ({ ...prev, [i]: '' }));
+                                            }}
+                                            className="w-full px-4 py-2.5 text-left hover:bg-brand-50 dark:hover:bg-brand-900/20 text-sm text-slate-700 dark:text-slate-300 font-medium transition-colors flex justify-between items-center">
+                                            <span>{ingredient.name}</span>
+                                            {ingredient.macro_per_hundred && (
+                                              <span className="text-[10px] text-slate-400 font-bold">
+                                                {Math.round(ingredient.macro_per_hundred.calories)} kcal
+                                              </span>
+                                            )}
+                                          </button>
+                                        );
+                                      })
+                                    ) : (
+                                      <div className="px-4 py-3 text-sm text-slate-400 text-center">No ingredients found</div>
+                                    )}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+
+                          {/* Quantity & Unit & Remove */}
+                          <div className="flex items-center gap-2">
+                            <input type="number" min="0.1" step="0.1" value={ing.quantity}
+                              onChange={(e) => {
+                                const updated = [...editingRecipe.ingredients];
+                                updated[i] = { ...updated[i], quantity: parseFloat(e.target.value) || 0 };
+                                setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                              }}
+                              className="flex-1 p-2.5 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none font-medium"
+                              placeholder="Quantity" />
+                            <select value={ing.capacity}
+                              onChange={(e) => {
+                                const updated = [...editingRecipe.ingredients];
+                                updated[i] = { ...updated[i], capacity: e.target.value };
+                                setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                              }}
+                              className="p-2.5 text-sm liquid-input rounded-xl bg-white dark:bg-slate-800 font-medium">
+                              {CAPACITY_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                            </select>
+                            <button type="button" onClick={() => {
+                              const updated = editingRecipe.ingredients.filter((_, idx) => idx !== i);
+                              setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                              const ns = { ...editIngSearchTerms }; delete ns[i];
+                              const nd = { ...editIngDropdownOpen }; delete nd[i];
+                              setEditIngSearchTerms(ns);
+                              setEditIngDropdownOpen(nd);
+                            }} className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full text-red-500 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <button type="button"
+                      onClick={() => setEditingRecipe({ ...editingRecipe, ingredients: [...editingRecipe.ingredients, { ingredient_id: '', capacity: 'g', quantity: 100 }] })}
+                      className="w-full p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-400 hover:border-brand-500 hover:text-brand-500 transition-colors text-sm font-bold flex items-center justify-center gap-2">
+                      <Plus className="w-4 h-4" /> Add Ingredient
+                    </button>
+                  </div>
+                </div>
+
+                {/* Instructions */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Instructions</label>
+                  <div className="space-y-3">
+                    {editingRecipe.prepare_instruction.map((step, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="flex-shrink-0 w-7 h-7 rounded-full bg-brand-500 text-white text-xs font-bold flex items-center justify-center mt-2">{i + 1}</span>
+                        <textarea value={step} rows={2}
+                          onChange={(e) => {
+                            const updated = [...editingRecipe.prepare_instruction];
+                            updated[i] = e.target.value;
+                            setEditingRecipe({ ...editingRecipe, prepare_instruction: updated });
+                          }}
+                          className="flex-1 p-3 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none resize-none" />
+                        <button onClick={() => {
+                          const updated = editingRecipe.prepare_instruction.filter((_, idx) => idx !== i);
+                          setEditingRecipe({ ...editingRecipe, prepare_instruction: updated });
+                        }} className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full text-red-500 transition-colors mt-2">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={() => setEditingRecipe({ ...editingRecipe, prepare_instruction: [...editingRecipe.prepare_instruction, ''] })}
+                      className="w-full p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-400 hover:border-brand-500 hover:text-brand-500 transition-colors text-sm font-bold flex items-center justify-center gap-2">
+                      <Plus className="w-4 h-4" /> Add Step
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-200 dark:border-white/10 flex justify-end gap-3">
+                <button onClick={() => setEditingRecipe(null)} className="px-6 py-2.5 rounded-2xl font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">Cancel</button>
+                <button onClick={handleSaveEditRecipe} disabled={isEditLoading}
+                  className="liquid-btn liquid-btn-primary px-10 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
+                  {isEditLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </motion.div>
   );
