@@ -15,7 +15,7 @@ import { AnimatePresence, motion } from "framer-motion";
 export default function Home() {
   const [activeTab, setActiveTab] = useState(NavItem.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [theme, setTheme] = useState("light");
+  const [theme, setTheme] = useState("dark");
 
   // Apply Theme Effect
   useEffect(() => {
