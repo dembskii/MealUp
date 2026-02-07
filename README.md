@@ -6,143 +6,261 @@ MealUp is a social platform for healthy nutrition, workout planning, and fitness
 
 ## Overview
 
-- **Healthy nutrition** – recipes, calorie tracking, ingredients
-- **Workout planning** – exercise library, training plans, trainer recommendations
-- **Community** – forum, comments, reputation system
-- **Personal goals** – progress tracking, analytics, fitness integrations
+MealUp is a comprehensive social platform combining:
+
+- **Healthy nutrition** – Recipe library with 500+ ingredients, macro tracking, custom recipe creation
+- **Workout planning** – Exercise database, training plans by day/type, workout plan builder
+- **Community** – Forum with posts, comments, likes, trending algorithm
+- **Personal tracking** – User profiles, preferences, progress monitoring (in development)
+- **Authentication** – Secure Auth0 integration with JWT tokens
+
+**Built with microservices architecture** for scalability, featuring independent services for recipes, workouts, forum, and user management, all coordinated through a central API Gateway.
 
 ## Current Status
 
-### ✅ Implemented
-- API Gateway (Port 8000) with microservices proxy
-- Auth0 integration
-- Session management with Redis
-- Frontend navigation & authentication UI
-- Docker & Docker Compose setup
-- Request logging & error handling
-- Health checks and service monitoring
+### ✅ Fully Implemented
+- **API Gateway** (Port 8000) - Microservices proxy with request routing
+- **Auth Service** (Port 8001) - Auth0 integration, JWT tokens, session management with Redis
+- **User Service** (Port 8002) - User profiles, CRUD operations, Auth0 synchronization
+- **Recipe Service** (Port 8003) - Recipe & ingredient management, search & filtering
+- **Workout Service** (Port 8004) - Exercise library, training plans, workout plan builder
+- **Forum Service** (Port 8007) - Posts, comments, likes, trending algorithm, search
+- **Frontend UI** - Complete navigation, dashboard, recipes, workouts, community views
+- **Infrastructure** - Docker Compose setup, health checks, request logging
 
-### 🔄 In Progress
-- User profiles & management
-- Recipe creation & browsing
-- Meal plan builder
-- Recipe search & filtering
+### 🔄 Partially Implemented
+- Payment Service (Docker setup only, no implementation)
+- Analytics Service (Docker setup only, no implementation)
+- Notification Service (Docker setup only, no implementation)
 
-### ⏳ Planned
-- Training plans & workout library
-- Community forum
-- Progress tracking & analytics
-- Integrations (Fitbit, Google Fit)
-- Stripe payments
+### ⏳ Planned Features
+- Meal plan generator & tracker
+- Progress analytics & tracking
+- Fitness integrations (Fitbit, Google Fit)
+- Stripe payment processing
+- Email & in-app notifications
+- Advanced recommendation engine
 
 ## System Architecture
 
 ```
-API Gateway (Port 8000) - Single entry point
-├── Auth Service (Port 8001)
-│   └── Redis (sessions)
-├── User Service (Port 8002)
-│   └── PostgreSQL
-├── Recipe Service (Port 8003)
-│   └── MongoDB
-├── Workout Service (Port 8004)
-│   └── MongoDB
-├── Payment Service (Port 8005)
-│   └── PostgreSQL
-├── Analytics Service (Port 8006)
-│   └── MongoDB
-├── Forum Service (Port 8007)
-│   └── PostgreSQL
-└── Notification Service (Port 8008)
+Frontend (Port 3000) - Next.js UI
+    ↓
+API Gateway (Port 8000) - Single entry point, routing & auth
+    ↓
+├── ✅ Auth Service (Port 8001)
+│   └── Redis (sessions & tokens)
+├── ✅ User Service (Port 8002)
+│   └── PostgreSQL (shared)
+├── ✅ Recipe Service (Port 8003)
+│   └── MongoDB (shared)
+├── ✅ Workout Service (Port 8004)
+│   └── MongoDB (shared)
+├── 🔄 Payment Service (Port 8005)
+│   └── PostgreSQL (shared)
+├── 🔄 Analytics Service (Port 8006)
+│   └── MongoDB (shared)
+├── ✅ Forum Service (Port 8007)
+│   └── PostgreSQL (shared)
+└── 🔄 Notification Service (Port 8008)
     └── Redis
+
+✅ = Fully Implemented  |  🔄 = Partial/Docker Only
 ```
 
 ## Microservices
 
-| Service | Port | Database | Purpose |
-|---------|------|----------|---------|
-| **Auth Service** | 8001 | Redis | User authentication, JWT tokens |
-| **User Service** | 8002 | PostgreSQL | User profiles, preferences |
-| **Recipe Service** | 8003 | MongoDB | Recipes, ingredients, macros |
-| **Workout Service** | 8004 | MongoDB | Training plans, exercises |
-| **Payment Service** | 8005 | PostgreSQL | Stripe integration, transactions |
-| **Analytics Service** | 8006 | MongoDB | Tracking, metrics, logs |
-| **Forum Service** | 8007 | PostgreSQL | Posts, comments, reputation |
-| **Notification Service** | 8008 | Redis | Email, in-app notifications |
+| Service | Port | Database | Status | Features |
+|---------|------|----------|--------|----------|
+| **API Gateway** | 8000 | Redis | ✅ | Request routing, proxy, logging, health checks |
+| **Auth Service** | 8001 | Redis | ✅ | Auth0 integration, JWT tokens, session management |
+| **User Service** | 8002 | PostgreSQL | ✅ | User CRUD, profiles, Auth0 sync, preferences |
+| **Recipe Service** | 8003 | MongoDB | ✅ | Recipes, ingredients, search, filtering, macros |
+| **Workout Service** | 8004 | MongoDB | ✅ | Exercises, trainings, workout plans, categories |
+| **Forum Service** | 8007 | PostgreSQL | ✅ | Posts, comments, likes, trending, search |
+| **Payment Service** | 8005 | PostgreSQL | 🔄 | Docker setup only (planned: Stripe) |
+| **Analytics Service** | 8006 | MongoDB | 🔄 | Docker setup only (planned: tracking) |
+| **Notification Service** | 8008 | Redis | 🔄 | Docker setup only (planned: email/push) |
+
+## Key Features by Service
+
+### 🔐 Authentication & User Management
+- **Auth0 Integration**: OAuth 2.0 authentication with JWT tokens
+- **Session Management**: Redis-based session storage for fast access
+- **User Profiles**: Full CRUD operations, preferences, Auth0 synchronization
+- **Protected Routes**: Shared auth guard middleware across all services
+
+### 🍽️ Recipe & Nutrition
+- **Recipe Library**: Create, read, update, delete recipes with full metadata
+- **Ingredient Database**: 500+ ingredients with macro information (calories, protein, carbs, fats)
+- **Search & Filter**: Find recipes by name, author, ingredients, or dietary requirements
+- **Macro Tracking**: Automatic calculation of nutritional values
+
+### 💪 Workout & Training
+- **Exercise Library**: Comprehensive database with body part targeting, advancement levels, categories
+- **Training Plans**: Create structured training sessions with exercises, sets, reps, and rest periods
+- **Workout Plans**: Organize trainings by day of week and training type (strength, cardio, etc.)
+- **Filtering**: Advanced search by body part, difficulty, exercise category
+
+### 👥 Community & Social
+- **Forum Posts**: Create and browse community posts with rich content
+- **Comments**: Threaded discussions on posts
+- **Like System**: Engagement tracking for posts
+- **Trending Algorithm**: Discover popular content based on engagement coefficient
+- **Search**: Find posts and discussions by keywords
+
+### 🚪 API Gateway
+- **Unified Entry Point**: Single endpoint for all microservices (http://localhost:8000)
+- **Request Routing**: Automatic proxy to appropriate services
+- **Logging**: Comprehensive request/response logging
+- **Health Checks**: Monitor service availability
+- **CORS Handling**: Configured for frontend integration
 
 ## Tech Stack
 
-**Frontend**: Next.js, React, TailwindCSS  
-**Backend**: FastAPI (Python), microservices architecture  
-**Databases**: PostgreSQL, MongoDB, Redis  
-**Infrastructure**: Docker, Docker Compose, CI/CD
-**Auth**: Auth0, JWT  
+**Frontend**: Next.js 14, React, TailwindCSS, Framer Motion  
+**Backend**: FastAPI (Python 3.11+), microservices architecture  
+**Databases**:
+- PostgreSQL 16 (User, Forum, Payment services - shared instance)
+- MongoDB 7 (Recipe, Workout, Analytics services - shared instance)
+- Redis 7 (Auth sessions, Notifications - separate instances)
+
+**Authentication**: Auth0, JWT tokens, session management  
+**Infrastructure**: Docker, Docker Compose  
+**API**: RESTful APIs, OpenAPI/Swagger documentation  
+**Shared Libraries**: Common auth guard module for microservices  
 
 ## Quick Start
 
 ```bash
-# Clone and setup
+# Clone repository
 git clone <repo>
 cd MealUp
 
-# Start all services
+# Start all services (includes setup for all 8 microservices)
 docker-compose up --build
 
-# Frontend: http://localhost:3000
-# API Gateway: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+# Access points:
+# - Frontend UI: http://localhost:3000
+# - API Gateway: http://localhost:8000
+# - API Documentation: http://localhost:8000/docs
+# - Individual services: ports 8001-8008
 ```
 
-## Approximate Project Structure
+### What's Working:
+- Full authentication flow with Auth0
+- User profile management
+- Recipe browsing, creation, and search (MongoDB)
+- Workout plan creation with exercise library (MongoDB)
+- Community forum with posts, comments, and trending (PostgreSQL)
+- Complete UI with navigation between all sections
+
+### Environment Setup:
+You'll need to configure Auth0 credentials and database passwords in a `.env` file. See docker-compose.yml for required environment variables.
+
+## Project Structure
 
 ```
 MealUp/
-├── frontend/                      # Next.js app
+├── frontend/                      # Next.js + React + TailwindCSS
 │   ├── app/
-│   │   ├── components/
-│   │   ├── page.js
+│   │   ├── components/           # UI components
+│   │   │   ├── Dashboard.jsx     # Main dashboard
+│   │   │   ├── RecipesView.jsx   # Recipe browser
+│   │   │   ├── WorkoutsView.jsx  # Workout planner
+│   │   │   ├── Community.jsx     # Forum interface
+│   │   │   ├── Profile.jsx       # User profile
+│   │   │   └── Navigation.jsx    # App navigation
+│   │   ├── services/             # API service layer
+│   │   ├── page.js               # Main app page
 │   │   └── layout.js
 │   └── package.json
 ├── backend/
-│   ├── gateway/                  # API Gateway (FastAPI)
-│   ├── auth-service/             # Port 8001
-│   ├── user-service/             # Port 8002
-│   ├── recipe-service/           # Port 8003
-│   ├── workout-service/          # Port 8004
-│   ├── payment-service/          # Port 8005
-│   ├── analytics-service/        # Port 8006
-│   ├── forum-service/            # Port 8007
-│   └── notification-service/     # Port 8008
-└── docker-compose.yml
+│   ├── common/                   # Shared auth & utilities
+│   ├── gateway/                  # ✅ API Gateway (Port 8000)
+│   ├── auth-service/             # ✅ Port 8001 (Auth0 + Redis)
+│   ├── user-service/             # ✅ Port 8002 (PostgreSQL)
+│   ├── recipe-service/           # ✅ Port 8003 (MongoDB)
+│   ├── workout-service/          # ✅ Port 8004 (MongoDB)
+│   ├── forum-service/            # ✅ Port 8007 (PostgreSQL)
+│   └── scripts/                  # Database init scripts
+└── docker-compose.yml            # Full stack orchestration
 ```
+
+**Note:** Payment (8005), Analytics (8006), and Notification (8008) services are defined in Docker Compose but not yet implemented.
 
 ## Features Roadmap
 
-### Phase 1: Core Infrastructure ✅
-- API Gateway with proxy routing
-- Auth0 integration
-- Basic frontend UI
+### Phase 1: Core Infrastructure ✅ COMPLETED
+- ✅ API Gateway with proxy routing
+- ✅ Auth0 integration & JWT tokens
+- ✅ Session management with Redis
+- ✅ Docker Compose orchestration
+- ✅ Health checks & monitoring
 
-### Phase 2: Recipes & Meals 🔄
-- Recipe creation & management
-- Ingredient tracking
-- Meal planning interface
+### Phase 2: User Management ✅ COMPLETED
+- ✅ User service with PostgreSQL
+- ✅ User profiles & preferences
+- ✅ Auth0 user synchronization
+- ✅ Profile UI component
 
-### Phase 3: Workouts & Training ⏳
-- Workout library
-- Training plan builder
-- Progress tracking
+### Phase 3: Recipes & Nutrition ✅ COMPLETED
+- ✅ Recipe creation & management
+- ✅ Ingredient library with macros
+- ✅ Recipe search & filtering
+- ✅ Recipe browsing UI
 
-### Phase 4: Community ⏳
-- Forum posts & comments
-- Reputation system
-- User moderation
+### Phase 4: Workouts & Training ✅ COMPLETED
+- ✅ Exercise library (body parts, advancement levels)
+- ✅ Training plan builder
+- ✅ Workout plan management
+- ✅ Workout UI component
 
-### Phase 5: Payments & Analytics ⏳
-- Stripe integration
-- Advanced tracking
-- Fitness integrations
+### Phase 5: Community & Forum ✅ COMPLETED
+- ✅ Forum posts & comments
+- ✅ Like system
+- ✅ Trending algorithm
+- ✅ Search functionality
+- ✅ Community UI
+
+### Phase 6: Payments & Premium 🔄 IN PROGRESS
+- 🔄 Docker setup for payment service
+- ⏳ Stripe integration
+- ⏳ Subscription management
+- ⏳ Premium features
+
+### Phase 7: Analytics & Tracking 🔄 IN PROGRESS  
+- 🔄 Docker setup for analytics service
+- ⏳ Progress tracking
+- ⏳ Fitness metrics
+- ⏳ Data visualization
+
+### Phase 8: Notifications ⏳ PLANNED
+- 🔄 Docker setup for notification service
+- ⏳ Email notifications
+- ⏳ In-app notifications
+- ⏳ Push notifications
+
+### Phase 9: Integrations ⏳ PLANNED
+- ⏳ Fitbit integration
+- ⏳ Google Fit integration
+- ⏳ Apple Health integration
+- ⏳ Meal plan generator
 
 ## Contributing
 
-This is an active development project. See implementation roadmap above for current focus areas.
+This is an active development project for university coursework (Semester 5 - Team Project).
+
+**Current Focus**: 
+- Implementing payment service with Stripe
+- Building analytics and tracking features
+- Adding notification system
+- Developing meal plan generator
+
+**Completed Milestones**:
+- ✅ Full microservices infrastructure
+- ✅ Authentication & authorization
+- ✅ Recipe management system
+- ✅ Workout planning system
+- ✅ Community forum with trending algorithm
+- ✅ Complete frontend UI with all main views
