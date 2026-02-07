@@ -13,6 +13,7 @@ export const ENDPOINTS = {
   AUTH: `${API_ENDPOINT_URL}/auth`,
   USERS: `${API_ENDPOINT_URL}/user`,
   RECIPES: `${API_ENDPOINT_URL}/recipes`,
+  WORKOUTS: `${API_ENDPOINT_URL}/workouts`,
 };
 
 export default {

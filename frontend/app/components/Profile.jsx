@@ -1,10 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
-import { User, MapPin, Calendar, Heart, Clock, Flame, Award, Settings, Loader2, ChefHat, ArrowRight, CheckCircle2, X } from 'lucide-react';
+import {
+  User, MapPin, Calendar, Heart, Clock, Flame, Award, Settings, Loader2, ChefHat, ArrowRight,
+  CheckCircle2, X, Dumbbell, Activity, Layers, Search, Filter, Edit3, Save, Trash2,
+  ChevronDown, Plus
+} from 'lucide-react';
+import {
+  getMyWorkoutPlans, getTrainings, getExercises,
+  updateTraining, deleteTraining, updateWorkoutPlan, deleteWorkoutPlan,
+} from '../services/workoutService';
+import { TrainingType, SetUnit, DayOfWeek, BodyPart, Advancement } from '../data/types';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const buildExerciseMap = (exercisesArr) => {
+  const map = {};
+  for (const ex of exercisesArr) map[ex._id] = ex;
+  return map;
+};
+
+const populateTraining = (training, exercisesMap) => ({
+  ...training,
+  exercises: training.exercises.map(ex => ({
+    ...ex,
+    _exerciseDetails: exercisesMap[ex.exercise_id] || {
+      _id: ex.exercise_id, name: 'Unknown Exercise',
+      body_part: BodyPart.FULL_BODY, advancement: Advancement.BEGINNER, category: 'custom'
+    }
+  }))
+});
 
 const authApi = axios.create({ baseURL: ENDPOINTS.AUTH, withCredentials: true });
 const userApi = axios.create({ baseURL: ENDPOINTS.USERS, withCredentials: true });
@@ -18,10 +44,37 @@ export default function Profile() {
   const [myRecipes, setMyRecipes] = useState([]);
   const [ingredientMap, setIngredientMap] = useState({});
   const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [myPlans, setMyPlans] = useState([]);
+  const [myTrainings, setMyTrainings] = useState([]);
+  const [workoutsLoading, setWorkoutsLoading] = useState(true);
+  const [exercisesDB, setExercisesDB] = useState({});
+  const [allExercises, setAllExercises] = useState([]);
+
+  // Search & filter state for profile tabs
+  const [planSearchQuery, setPlanSearchQuery] = useState('');
+  const [workoutSearchQuery, setWorkoutSearchQuery] = useState('');
+  const [showWorkoutFilters, setShowWorkoutFilters] = useState(false);
+  const [filterTrainingType, setFilterTrainingType] = useState('ALL');
+  const [filterBodyPart, setFilterBodyPart] = useState('ALL');
+  const [filterAdvancement, setFilterAdvancement] = useState('ALL');
+  const [filterMaxTime, setFilterMaxTime] = useState(120);
+
+  // Detail / edit modals
+  const [selectedTraining, setSelectedTraining] = useState(null);
+  const [editingTraining, setEditingTraining] = useState(null);
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [expandedPlanTrainings, setExpandedPlanTrainings] = useState({});
+  const [isEditLoading, setIsEditLoading] = useState(false);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerBodyPart, setPickerBodyPart] = useState('ALL');
 
   const [loading, setLoading] = useState(true);
   const [recipesLoading, setRecipesLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   useEffect(() => {
     fetchProfileData();
@@ -68,12 +121,224 @@ export default function Profile() {
         map[ing.id || ing._id] = ing;
       });
       setIngredientMap(map);
+      // 4. Fetch workout plans, trainings, and exercises (independently so one failure doesn't block others)
+      setWorkoutsLoading(true);
+      try {
+        const [plansResult, trainingsResult, exercisesResult] = await Promise.allSettled([
+          getMyWorkoutPlans({ limit: 100 }),
+          getTrainings({ limit: 500 }),
+          getExercises({ limit: 1000 }),
+        ]);
+
+        const exercisesRes = exercisesResult.status === 'fulfilled' ? exercisesResult.value : [];
+        const trainingsRes = trainingsResult.status === 'fulfilled' ? trainingsResult.value : [];
+        const plansRes = plansResult.status === 'fulfilled' ? plansResult.value : [];
+
+        if (exercisesResult.status === 'rejected') console.warn('Could not fetch exercises:', exercisesResult.reason);
+        if (trainingsResult.status === 'rejected') console.warn('Could not fetch trainings:', trainingsResult.reason);
+        if (plansResult.status === 'rejected') console.warn('Could not fetch my plans:', plansResult.reason);
+
+        const exMap = buildExerciseMap(exercisesRes);
+        setExercisesDB(exMap);
+        setAllExercises(exercisesRes);
+        setMyPlans(plansRes);
+        setMyTrainings(trainingsRes.map(t => populateTraining(t, exMap)));
+      } catch (workoutErr) {
+        console.warn('Could not fetch workout data:', workoutErr);
+      } finally {
+        setWorkoutsLoading(false);
+      }
     } catch (err) {
       console.error('Error fetching profile data:', err);
       setError(err.response?.data?.detail || err.message);
     } finally {
       setLoading(false);
       setRecipesLoading(false);
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return '? min';
+    return `${Math.floor(seconds / 60)} min`;
+  };
+
+  const getDifficultyColor = (type) => {
+    switch (type) {
+      case TrainingType.HIIT: return 'text-orange-600 bg-orange-100/50 border-orange-200';
+      case TrainingType.STRENGTH: return 'text-red-600 bg-red-100/50 border-red-200';
+      case TrainingType.CARDIO: return 'text-blue-600 bg-blue-100/50 border-blue-200';
+      case TrainingType.YOGA: return 'text-green-600 bg-green-100/50 border-green-200';
+      default: return 'text-slate-500 bg-slate-100/50 border-slate-100';
+    }
+  };
+
+  // ---------- Filtered lists ----------
+  const filteredMyPlans = useMemo(() => {
+    return myPlans.filter(p => {
+      if (planSearchQuery && !p.name.toLowerCase().includes(planSearchQuery.toLowerCase())) return false;
+      return true;
+    });
+  }, [myPlans, planSearchQuery]);
+
+  const filteredMyTrainings = useMemo(() => {
+    return myTrainings.filter(t => {
+      if (workoutSearchQuery && !t.name.toLowerCase().includes(workoutSearchQuery.toLowerCase())) return false;
+      if (filterTrainingType !== 'ALL' && t.training_type !== filterTrainingType) return false;
+      if (filterMaxTime < 120 && t.est_time > filterMaxTime * 60) return false;
+      if (filterBodyPart !== 'ALL') {
+        const hasBodyPart = t.exercises.some(ex => ex._exerciseDetails?.body_part === filterBodyPart);
+        if (!hasBodyPart) return false;
+      }
+      if (filterAdvancement !== 'ALL') {
+        const hasAdv = t.exercises.some(ex => ex._exerciseDetails?.advancement === filterAdvancement);
+        if (!hasAdv) return false;
+      }
+      return true;
+    });
+  }, [myTrainings, workoutSearchQuery, filterTrainingType, filterMaxTime, filterBodyPart, filterAdvancement]);
+
+  const filteredExercisesForPicker = useMemo(() => {
+    return allExercises.filter(ex => {
+      if (pickerBodyPart !== 'ALL' && ex.body_part !== pickerBodyPart) return false;
+      if (pickerSearch && !ex.name.toLowerCase().includes(pickerSearch.toLowerCase())) return false;
+      return true;
+    });
+  }, [allExercises, pickerBodyPart, pickerSearch]);
+
+  // ---------- Training handlers ----------
+  const handleStartEditTraining = (training) => {
+    setEditingTraining({
+      _id: training._id,
+      name: training.name,
+      description: training.description || '',
+      day: training.day,
+      training_type: training.training_type,
+      est_time: training.est_time,
+      exercises: training.exercises.map(ex => ({
+        exercise_id: ex.exercise_id,
+        sets: ex.sets,
+        rest_between_sets: ex.rest_between_sets || 60,
+        notes: ex.notes || '',
+      })),
+    });
+    setSelectedTraining(null);
+  };
+
+  const handleSaveEditTraining = async () => {
+    if (!editingTraining || !editingTraining.name || !editingTraining.exercises?.length) return;
+    setIsEditLoading(true);
+    try {
+      const payload = {
+        name: editingTraining.name,
+        exercises: editingTraining.exercises.map(ex => ({
+          exercise_id: ex.exercise_id,
+          sets: ex.sets,
+          rest_between_sets: ex.rest_between_sets || 60,
+          notes: ex.notes || null,
+        })),
+        est_time: editingTraining.est_time,
+        day: editingTraining.day,
+        training_type: editingTraining.training_type,
+        description: editingTraining.description || null,
+      };
+      const saved = await updateTraining(editingTraining._id, payload);
+      setMyTrainings(prev => prev.map(t => t._id === saved._id ? populateTraining(saved, exercisesDB) : t));
+      setEditingTraining(null);
+    } catch (err) {
+      console.error('Failed to update training:', err);
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleDeleteTraining = async (trainingId) => {
+    if (!confirm('Delete this workout?')) return;
+    try {
+      await deleteTraining(trainingId);
+      setMyTrainings(prev => prev.filter(t => t._id !== trainingId));
+      setSelectedTraining(null);
+    } catch (err) {
+      console.error('Failed to delete training:', err);
+    }
+  };
+
+  const handleEditUpdateSet = (exIndex, setIndex, field, value) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const sets = [...exercises[exIndex].sets];
+      sets[setIndex] = { ...sets[setIndex], [field]: value };
+      exercises[exIndex] = { ...exercises[exIndex], sets };
+      return { ...prev, exercises };
+    });
+  };
+  const handleEditAddSet = (exIndex) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const ex = exercises[exIndex];
+      exercises[exIndex] = { ...ex, sets: [...ex.sets, { volume: 10, units: SetUnit.REPS }] };
+      return { ...prev, exercises };
+    });
+  };
+  const handleEditRemoveSet = (exIndex, setIndex) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const ex = exercises[exIndex];
+      if (ex.sets.length <= 1) return prev;
+      exercises[exIndex] = { ...ex, sets: ex.sets.filter((_, i) => i !== setIndex) };
+      return { ...prev, exercises };
+    });
+  };
+
+  const handleAddExerciseToEditing = (exerciseId) => {
+    const newEx = {
+      exercise_id: exerciseId,
+      sets: [{ volume: 10, units: SetUnit.REPS }, { volume: 10, units: SetUnit.REPS }, { volume: 10, units: SetUnit.REPS }],
+      rest_between_sets: 60, notes: ''
+    };
+    setEditingTraining(prev => ({ ...prev, exercises: [...(prev.exercises || []), newEx] }));
+    setShowExercisePicker(false);
+  };
+
+  // ---------- Plan handlers ----------
+  const handleStartEditPlan = (plan) => {
+    setEditingPlan({
+      _id: plan._id,
+      name: plan.name,
+      description: plan.description || '',
+      trainings: plan.trainings || [],
+      is_public: plan.is_public,
+    });
+    setSelectedPlan(null);
+  };
+
+  const handleSaveEditPlan = async () => {
+    if (!editingPlan || !editingPlan.name) return;
+    setIsEditLoading(true);
+    try {
+      const payload = {
+        name: editingPlan.name,
+        description: editingPlan.description || null,
+        trainings: editingPlan.trainings,
+        is_public: editingPlan.is_public,
+      };
+      const saved = await updateWorkoutPlan(editingPlan._id, payload);
+      setMyPlans(prev => prev.map(p => p._id === saved._id ? saved : p));
+      setEditingPlan(null);
+    } catch (err) {
+      console.error('Failed to update plan:', err);
+    } finally {
+      setIsEditLoading(false);
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!confirm('Delete this plan?')) return;
+    try {
+      await deleteWorkoutPlan(planId);
+      setMyPlans(prev => prev.filter(p => p._id !== planId));
+      setSelectedPlan(null);
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
     }
   };
 
@@ -262,10 +527,18 @@ export default function Profile() {
               </div>
             )}
           </div>
-          <div className="flex gap-6 md:gap-8 bg-white/40 dark:bg-black/20 p-4 rounded-2xl border border-white/20 dark:border-white/5 min-w-[140px] justify-between backdrop-blur-sm">
+          <div className="flex gap-6 md:gap-8 bg-white/40 dark:bg-black/20 p-4 rounded-2xl border border-white/20 dark:border-white/5 min-w-[240px] justify-between backdrop-blur-sm">
             <div className="text-center">
               <p className="font-bold text-slate-800 dark:text-white text-lg">{myRecipes.length}</p>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Recipes</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold text-slate-800 dark:text-white text-lg">{myPlans.length}</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Plans</p>
+            </div>
+            <div className="text-center">
+              <p className="font-bold text-slate-800 dark:text-white text-lg">{myTrainings.length}</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Workouts</p>
             </div>
           </div>
         </div>
@@ -275,6 +548,8 @@ export default function Profile() {
       <div className="flex gap-6 border-b border-white/20 dark:border-white/10 mb-6 overflow-x-auto pb-1 scrollbar-hide">
         {[
           { id: 'my_recipes', label: `My Recipes (${myRecipes.length})` },
+          { id: 'my_plans', label: `My Plans (${myPlans.length})` },
+          { id: 'my_workouts', label: `My Workouts (${myTrainings.length})` },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`pb-3 text-sm font-bold relative whitespace-nowrap transition-colors ${activeTab === tab.id ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}>
@@ -300,7 +575,526 @@ export default function Profile() {
               )}
             </div>
           )}
+
+          {activeTab === 'my_plans' && (
+            <div className="space-y-6">
+              <div className="glass-panel p-2 rounded-2xl flex flex-col md:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input type="text" value={planSearchQuery} onChange={(e) => setPlanSearchQuery(e.target.value)} placeholder="Search your plans..."
+                    className="w-full pl-12 pr-4 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none font-medium" />
+                </div>
+              </div>
+              {workoutsLoading ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-500" /></div>
+              ) : filteredMyPlans.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredMyPlans.map(plan => {
+                    const workoutCount = plan.trainings?.length || 0;
+                    const uniqueWorkoutIds = Array.from(new Set(plan.trainings || []));
+                    return (
+                      <motion.div key={plan._id} layoutId={`prof-plan-${plan._id}`} onClick={() => { setExpandedPlanTrainings({}); setSelectedPlan(plan); }}
+                        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
+                        className="glass-panel rounded-3xl p-6 relative overflow-hidden group cursor-pointer">
+                        <div className="absolute top-0 left-0 w-2 h-full bg-brand-500"></div>
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2 ml-2 group-hover:text-brand-600 transition-colors">{plan.name}</h3>
+                        <p className="text-sm text-slate-500 mb-4 ml-2 line-clamp-2">{plan.description || 'Personal goal plan.'}</p>
+                        <div className="flex gap-2 mb-4 ml-2">
+                          <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200">{workoutCount} Trainings</span>
+                          {plan.total_likes > 0 && <span className="bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full text-xs font-bold text-red-500 border border-red-200">{plan.total_likes} Likes</span>}
+                          {plan.is_public && <span className="bg-green-50 dark:bg-green-900/20 px-3 py-1 rounded-full text-xs font-bold text-green-600 border border-green-200">Public</span>}
+                        </div>
+                        <div className="ml-2 space-y-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Trainings:</p>
+                          {uniqueWorkoutIds.slice(0, 3).map(tid => {
+                            const t = myTrainings.find(tr => tr._id === tid);
+                            return t ? <div key={tid} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"><Dumbbell className="w-3.5 h-3.5 text-brand-500" />{t.name}</div> : null;
+                          })}
+                          {uniqueWorkoutIds.length > 3 && <p className="text-xs text-slate-400 ml-5">+{uniqueWorkoutIds.length - 3} more</p>}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-center text-slate-400 py-10">{myPlans.length > 0 ? 'No plans match your search.' : "You haven't created any workout plans yet."}</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'my_workouts' && (
+            <div className="space-y-6">
+              <div className="space-y-4">
+                <div className="glass-panel p-2 rounded-2xl flex flex-col md:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                    <input type="text" value={workoutSearchQuery} onChange={(e) => setWorkoutSearchQuery(e.target.value)} placeholder="Search your workouts..."
+                      className="w-full pl-12 pr-4 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none font-medium" />
+                  </div>
+                  <button onClick={() => setShowWorkoutFilters(!showWorkoutFilters)}
+                    className={`px-6 py-3 rounded-xl flex items-center gap-2 font-bold transition-all ${showWorkoutFilters ? 'bg-slate-800 text-white shadow-lg' : 'bg-white/50 dark:bg-white/5 text-slate-600 hover:bg-white/80'}`}>
+                    <Filter className="w-4 h-4" /> Filters
+                  </button>
+                </div>
+                <AnimatePresence>
+                  {showWorkoutFilters && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <div className="glass-panel rounded-2xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 border-dashed">
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Layers className="w-3 h-3" /> Training Type</label>
+                          <div className="flex flex-wrap gap-2">
+                            {['ALL', ...Object.values(TrainingType)].map(tt => (
+                              <button key={tt} onClick={() => setFilterTrainingType(tt)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterTrainingType === tt ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                                {tt === 'ALL' ? 'All' : tt.replace('_', ' ')}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Dumbbell className="w-3 h-3" /> Body Part</label>
+                          <div className="flex flex-wrap gap-2">
+                            {['ALL', ...Object.values(BodyPart)].map(bp => (
+                              <button key={bp} onClick={() => setFilterBodyPart(bp)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterBodyPart === bp ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                                {bp === 'ALL' ? 'All' : bp.replace('_', ' ')}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Award className="w-3 h-3" /> Advancement</label>
+                          <div className="flex flex-wrap gap-2">
+                            {['ALL', ...Object.values(Advancement)].map(adv => (
+                              <button key={adv} onClick={() => setFilterAdvancement(adv)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterAdvancement === adv ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                                {adv === 'ALL' ? 'All' : adv}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between ml-1">
+                            <span className="flex items-center gap-2"><Clock className="w-3 h-3" /> Max Duration</span>
+                            <span className="text-brand-500">{filterMaxTime} min</span>
+                          </label>
+                          <input type="range" min="5" max="180" step="5" value={filterMaxTime} onChange={(e) => setFilterMaxTime(parseInt(e.target.value))}
+                            className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-500" />
+                          <div className="flex justify-between text-[9px] text-slate-400 font-bold px-1"><span>5m</span><span>180m</span></div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              {workoutsLoading ? (
+                <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-brand-500" /></div>
+              ) : filteredMyTrainings.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredMyTrainings.map(training => (
+                    <motion.div key={training._id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
+                      onClick={() => setSelectedTraining(training)}
+                      className="glass-panel rounded-3xl p-6 relative overflow-hidden group cursor-pointer">
+                      <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white group-hover:text-brand-600 transition-colors">{training.name}</h3>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(training.training_type)}`}>{training.training_type?.replace('_', ' ')}</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
+                        <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatDuration(training.est_time)}</span></div>
+                        <div className="flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" /><span>{training.exercises.length} exercises</span></div>
+                        <div className="flex items-center gap-1 ml-auto"><Calendar className="w-3.5 h-3.5 text-slate-400" /><span className="text-xs">{dayNames[training.day]}</span></div>
+                      </div>
+                      <div className="space-y-2">
+                        {training.exercises.slice(0, 3).map((ex, i) => (
+                          <div key={i} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                            <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+                            <span>{ex._exerciseDetails?.name || 'Unknown'}</span>
+                            <span className="text-slate-400 text-xs ml-auto">{ex.sets.length} x {ex.sets[0]?.volume} {ex.sets[0]?.units}</span>
+                          </div>
+                        ))}
+                        {training.exercises.length > 3 && <p className="text-xs text-slate-400 ml-3">+{training.exercises.length - 3} more</p>}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-slate-400 py-10">{myTrainings.length > 0 ? 'No workouts match your filters.' : "You haven't created any workouts yet."}</p>
+              )}
+            </div>
+          )}
         </motion.div>
+      </AnimatePresence>
+
+      {/* TRAINING DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedTraining && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedTraining(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3 flex-1 min-w-0">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm truncate">{selectedTraining.name}</h3>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(selectedTraining.training_type)}`}>{selectedTraining.training_type?.replace('_', ' ')}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{formatDuration(selectedTraining.est_time)}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{dayNames[selectedTraining.day]}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleStartEditTraining(selectedTraining)} className="p-2.5 hover:bg-brand-500/10 rounded-full transition-colors group" title="Edit"><Edit3 className="w-4 h-4 text-slate-400 group-hover:text-brand-500" /></button>
+                  <button onClick={() => handleDeleteTraining(selectedTraining._id)} className="p-2.5 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors group" title="Delete"><Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-500" /></button>
+                  <button onClick={() => setSelectedTraining(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {selectedTraining.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedTraining.description}</p>}
+                {selectedTraining.exercises.map((ex, i) => (
+                  <div key={i} className="p-5 bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Dumbbell className="w-5 h-5" /></div>
+                      <div>
+                        <h4 className="font-bold text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} • {ex._exerciseDetails?.advancement || ''}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {ex.sets.map((set, si) => (
+                        <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                          <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                          <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2 ml-1">Rest: {ex.rest_between_sets}s between sets</p>}
+                    {ex.notes && <p className="text-xs text-slate-500 mt-2 ml-1 italic">{ex.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* TRAINING EDIT MODAL */}
+      <AnimatePresence>
+        {editingTraining && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingTraining(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Edit Workout</h3>
+                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Modify Session Details</p>
+                </div>
+                <button onClick={() => setEditingTraining(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Title</label>
+                    <input type="text" value={editingTraining.name} onChange={e => setEditingTraining({...editingTraining, name: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Type</label>
+                    <select value={editingTraining.training_type} onChange={e => setEditingTraining({...editingTraining, training_type: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
+                      {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Day</label>
+                    <select value={editingTraining.day} onChange={e => setEditingTraining({...editingTraining, day: parseInt(e.target.value)})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
+                      {Object.entries(DayOfWeek).map(([k, v]) => <option key={v} value={v}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
+                    <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Description</label>
+                  <input type="text" value={editingTraining.description} onChange={e => setEditingTraining({...editingTraining, description: e.target.value})} placeholder="Optional description"
+                    className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Activity className="w-4 h-4 text-brand-500" /> Exercises ({editingTraining.exercises?.length || 0})</label>
+                    <button onClick={() => setShowExercisePicker(true)} className="flex items-center gap-2 text-brand-600 dark:text-brand-400 font-bold text-sm bg-brand-500/10 px-4 py-2 rounded-xl hover:bg-brand-500/20 transition-all active:scale-95"><Plus className="w-4 h-4" /> Add Exercise</button>
+                  </div>
+                  {editingTraining.exercises?.map((ex, exIdx) => (
+                    <motion.div key={exIdx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                      className="p-5 bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-3xl shadow-sm group backdrop-blur-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-brand-500/10 text-brand-500 rounded-2xl"><Dumbbell className="w-5 h-5" /></div>
+                          <div>
+                            <span className="font-bold text-slate-800 dark:text-white">{exercisesDB[ex.exercise_id]?.name || 'Exercise'}</span>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(exercisesDB[ex.exercise_id]?.body_part || '').replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setEditingTraining(prev => ({...prev, exercises: prev.exercises.filter((_, idx) => idx !== exIdx)}))}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {ex.sets.map((set, setIdx) => (
+                          <div key={setIdx} className="flex gap-2 items-center bg-white/60 dark:bg-black/20 p-2 rounded-2xl border border-white/40 dark:border-white/5 group/set">
+                            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400">{setIdx + 1}</div>
+                            <input type="number" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value))}
+                              className="w-14 p-2 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
+                            <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
+                              className="flex-1 p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer">
+                              {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                            <button onClick={() => handleEditRemoveSet(exIdx, setIdx)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/set:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                        <button onClick={() => handleEditAddSet(exIdx)}
+                          className="w-full py-3 border-2 border-dashed border-slate-100 dark:border-white/5 rounded-2xl text-slate-300 text-[10px] font-bold hover:border-brand-500/50 hover:bg-brand-500/5 hover:text-brand-600 transition-all flex items-center justify-center gap-2">
+                          <Plus className="w-3.5 h-3.5" /> Add Set
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Rest (s)</label>
+                          <input type="number" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
+                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
+                          })} className="w-20 p-2 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Notes</label>
+                          <input type="text" value={ex.notes || ''} onChange={e => setEditingTraining(prev => {
+                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], notes: e.target.value }; return { ...prev, exercises };
+                          })} className="flex-1 p-2 liquid-input rounded-xl text-xs text-slate-800 dark:text-white outline-none font-medium" placeholder="Optional" />
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {(!editingTraining.exercises || editingTraining.exercises.length === 0) && (
+                    <div className="text-center py-12 border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[2rem] flex flex-col items-center gap-3 group hover:border-brand-500/30 transition-all cursor-pointer" onClick={() => setShowExercisePicker(true)}>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-full text-slate-300 group-hover:text-brand-500 transition-colors"><Activity className="w-8 h-8" /></div>
+                      <p className="text-xs font-bold text-slate-400">Click to add exercises</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
+                <button onClick={() => setEditingTraining(null)} className="px-6 py-2.5 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-800 dark:hover:text-white transition-colors">Cancel</button>
+                <button onClick={handleSaveEditTraining} disabled={!editingTraining.name || !editingTraining.exercises?.length}
+                  className="liquid-btn liquid-btn-primary px-10 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
+                  {isEditLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EXERCISE PICKER MODAL */}
+      <AnimatePresence>
+        {showExercisePicker && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowExercisePicker(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-lg bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2rem] relative z-10 flex flex-col max-h-[70vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center">
+                <h3 className="font-bold text-lg text-slate-800 dark:text-white pl-2">Pick Exercise</h3>
+                <button onClick={() => setShowExercisePicker(false)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input type="text" value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search exercises..."
+                    className="w-full pl-10 pr-4 py-3 liquid-input rounded-xl text-slate-800 dark:text-white outline-none" />
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {['ALL', ...Object.values(BodyPart)].map(bp => (
+                    <button key={bp} onClick={() => setPickerBodyPart(bp)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${pickerBodyPart === bp ? 'bg-brand-500 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500'}`}>
+                      {bp === 'ALL' ? 'All' : bp.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {filteredExercisesForPicker.map(ex => (
+                  <div key={ex._id} onClick={() => handleAddExerciseToEditing(ex._id)}
+                    className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-brand-500 transition-colors">
+                        <Dumbbell className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-800 dark:text-white">{ex.name}</h4>
+                        <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-[0.2em]">{ex.body_part.replace('_', ' ')} • {ex.advancement}</p>
+                      </div>
+                    </div>
+                    <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"><Plus className="w-5 h-5" /></div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* PLAN DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedPlan && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedPlan(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3 flex-1 min-w-0">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm truncate">{selectedPlan.name}</h3>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="text-[10px] text-slate-400 font-bold">{selectedPlan.trainings?.length || 0} trainings</span>
+                    {selectedPlan.total_likes > 0 && <span className="text-[10px] text-red-500 font-bold">{selectedPlan.total_likes} likes</span>}
+                    {selectedPlan.is_public && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 dark:bg-green-900/20 text-green-600 border border-green-200 dark:border-green-800">Public</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleStartEditPlan(selectedPlan)} className="p-2.5 hover:bg-brand-500/10 rounded-full transition-colors group" title="Edit"><Edit3 className="w-4 h-4 text-slate-400 group-hover:text-brand-500" /></button>
+                  <button onClick={() => handleDeletePlan(selectedPlan._id)} className="p-2.5 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors group" title="Delete"><Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-500" /></button>
+                  <button onClick={() => setSelectedPlan(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {selectedPlan.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedPlan.description}</p>}
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Layers className="w-3 h-3 text-brand-500" /> Trainings in this plan</label>
+                {(selectedPlan.trainings || []).map((tid, i) => {
+                  const t = myTrainings.find(tr => tr._id === tid);
+                  const isExpanded = expandedPlanTrainings[`${tid}-${i}`];
+                  return t ? (
+                    <div key={`${tid}-${i}`} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
+                      <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [`${tid}-${i}`]: !prev[`${tid}-${i}`] }))}
+                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/30 dark:hover:bg-white/[0.03] transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Activity className="w-5 h-5" /></div>
+                          <div>
+                            <h4 className="font-bold text-slate-800 dark:text-white">{t.name}</h4>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)} &bull; {dayNames[t.day]}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </div>
+                      </div>
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="px-4 pb-4 space-y-3 border-t border-white/30 dark:border-white/5 pt-3">
+                              {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
+                              {t.exercises.map((ex, ei) => (
+                                <div key={ei} className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <Dumbbell className="w-4 h-4 text-brand-500" />
+                                    <div>
+                                      <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} &bull; {ex._exerciseDetails?.advancement || ''}</p>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {ex.sets.map((set, si) => (
+                                      <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                        <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                                        <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2">Rest: {ex.rest_between_sets}s between sets</p>}
+                                  {ex.notes && <p className="text-xs text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl text-xs text-slate-400 italic">Training not found</div>
+                  );
+                })}
+                {(!selectedPlan.trainings || selectedPlan.trainings.length === 0) && <p className="text-sm text-slate-400 text-center py-8">No trainings assigned to this plan.</p>}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* PLAN EDIT MODAL */}
+      <AnimatePresence>
+        {editingPlan && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingPlan(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Edit Plan</h3>
+                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Modify Plan Details</p>
+                </div>
+                <button onClick={() => setEditingPlan(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Plan Name</label>
+                    <input type="text" value={editingPlan.name} onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Description</label>
+                    <input type="text" value={editingPlan.description} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} placeholder="Optional"
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Public</label>
+                  <button onClick={() => setEditingPlan({...editingPlan, is_public: !editingPlan.is_public})}
+                    className={`w-12 h-6 rounded-full transition-all ${editingPlan.is_public ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <div className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${editingPlan.is_public ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Trainings ({editingPlan.trainings?.length || 0})</label>
+                  {(editingPlan.trainings || []).map((tid, i) => {
+                    const t = myTrainings.find(tr => tr._id === tid);
+                    return (
+                      <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl border border-white/50 dark:border-white/10 flex justify-between items-center group">
+                        <div className="flex items-center gap-3">
+                          <Activity className="w-4 h-4 text-brand-500" />
+                          <span className="font-bold text-sm text-slate-800 dark:text-white">{t?.name || tid.slice(0, 8) + '...'}</span>
+                          {t && <span className="text-[10px] text-slate-400">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)}</span>}
+                        </div>
+                        <button onClick={() => setEditingPlan(prev => ({...prev, trainings: prev.trainings.filter((_, idx) => idx !== i)}))}
+                          className="p-1.5 text-slate-300 hover:text-red-500 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
+                <button onClick={() => setEditingPlan(null)} className="px-6 py-2.5 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-800 dark:hover:text-white transition-colors">Cancel</button>
+                <button onClick={handleSaveEditPlan} disabled={!editingPlan.name}
+                  className="liquid-btn liquid-btn-primary px-10 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
+                  {isEditLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       {/* Recipe Detail Modal */}

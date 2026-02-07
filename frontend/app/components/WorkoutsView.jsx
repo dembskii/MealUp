@@ -1,24 +1,40 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   TrainingType, SetUnit, DayOfWeek, BodyPart, Advancement
 } from '../data/types';
-import { MOCK_EXERCISES_DB } from '../data/mockData';
 import { generateWorkout } from '../services/geminiService';
 import {
+  getExercises,
+  getTrainings, createTraining, deleteTraining, updateTraining,
+  getWorkoutPlans, createWorkoutPlan, deleteWorkoutPlan, updateWorkoutPlan,
+  addTrainingToPlan, removeTrainingFromPlan,
+  getTrainingWithExercises,
+} from '../services/workoutService';
+import {
   Dumbbell, Clock, Activity, Plus, Sparkles, X,
-  Loader2, Search, Filter, ChevronDown,
+  Loader2, Search, Filter, ChevronDown, Award, Edit3,
   Save, Trash2, Calendar, LayoutGrid, Layers, Info, Hash, Type
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const populateTraining = (training) => {
+// Helper: build an exercisesMap lookup from an array of exercises
+const buildExerciseMap = (exercisesArr) => {
+  const map = {};
+  for (const ex of exercisesArr) {
+    map[ex._id] = ex;
+  }
+  return map;
+};
+
+// Populate training exercises with details from the map
+const populateTraining = (training, exercisesMap) => {
   return {
     ...training,
     exercises: training.exercises.map(ex => ({
       ...ex,
-      _exerciseDetails: MOCK_EXERCISES_DB[ex.exercise_id] || {
+      _exerciseDetails: exercisesMap[ex.exercise_id] || {
         _id: ex.exercise_id, name: 'Unknown Exercise',
         body_part: BodyPart.FULL_BODY, advancement: Advancement.BEGINNER,
         category: 'custom'
@@ -27,82 +43,147 @@ const populateTraining = (training) => {
   };
 };
 
-const INITIAL_TRAININGS = [
-  populateTraining({
-    _id: '1', name: 'Full Body HIIT Blast', est_time: 2700,
-    day: DayOfWeek.MONDAY, training_type: TrainingType.HIIT,
-    exercises: [
-      { exercise_id: 'ex_burpee', sets: Array(4).fill({ volume: 15, units: SetUnit.REPS }), rest_between_sets: 45 },
-      { exercise_id: 'ex_pushup', sets: Array(4).fill({ volume: 20, units: SetUnit.REPS }), rest_between_sets: 45 },
-      { exercise_id: 'ex_squat_jump', sets: Array(4).fill({ volume: 20, units: SetUnit.REPS }), rest_between_sets: 45 }
-    ]
-  }),
-  populateTraining({
-    _id: '2', name: 'Upper Body Power', est_time: 3600,
-    day: DayOfWeek.WEDNESDAY, training_type: TrainingType.STRENGTH,
-    exercises: [
-      { exercise_id: 'ex_bench', sets: Array(5).fill({ volume: 5, units: SetUnit.REPS }), rest_between_sets: 120 },
-      { exercise_id: 'ex_pullup', sets: Array(4).fill({ volume: 10, units: SetUnit.REPS }), rest_between_sets: 90 },
-      { exercise_id: 'ex_ohp', sets: Array(4).fill({ volume: 8, units: SetUnit.REPS }), rest_between_sets: 90 }
-    ]
-  })
-];
-
-const INITIAL_PLANS = [
-  {
-    _id: 'p1', name: 'Summer Shred 2024', trainer_id: 'self', clients: [],
-    schedule: {
-      [DayOfWeek.MONDAY]: ['1'], [DayOfWeek.TUESDAY]: [], [DayOfWeek.WEDNESDAY]: ['2'],
-      [DayOfWeek.THURSDAY]: [], [DayOfWeek.FRIDAY]: ['1'], [DayOfWeek.SATURDAY]: [], [DayOfWeek.SUNDAY]: [],
-    },
-    trainings: ['1', '2'],
-    description: 'A 4-week high intensity program to get lean. Focuses on HIIT and compound movements.',
-    is_public: false, total_likes: 0
-  }
-];
-
 export default function Workouts() {
+  // ---------- exercises from API ----------
+  const [exercisesDB, setExercisesDB] = useState({});
+  const [allExercises, setAllExercises] = useState([]);
+  const [exercisesLoaded, setExercisesLoaded] = useState(false);
+
   const [activeTab, setActiveTab] = useState('plans');
-  const [trainings, setTrainings] = useState(INITIAL_TRAININGS);
-  const [plans, setPlans] = useState(INITIAL_PLANS);
+  const [trainings, setTrainings] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isWorkoutCreatorOpen, setIsWorkoutCreatorOpen] = useState(false);
   const [isPlanCreatorOpen, setIsPlanCreatorOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedTraining, setSelectedTraining] = useState(null);
+  const [editingTraining, setEditingTraining] = useState(null);
+  const [editingPlan, setEditingPlan] = useState(null);
+  const [expandedPlanTrainings, setExpandedPlanTrainings] = useState({});
   const [prompt, setPrompt] = useState('');
   const [workoutSearchQuery, setWorkoutSearchQuery] = useState('');
   const [planSearchQuery, setPlanSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showPlanFilters, setShowPlanFilters] = useState(false);
+  const [showWorkoutFilters, setShowWorkoutFilters] = useState(false);
   const [filterBodyPart, setFilterBodyPart] = useState('ALL');
   const [filterAdvancement, setFilterAdvancement] = useState('ALL');
   const [filterMaxTime, setFilterMaxTime] = useState(120);
+  const [filterTrainingType, setFilterTrainingType] = useState('ALL');
   const [planFilterFrequency, setPlanFilterFrequency] = useState('ALL');
   const [planFilterDuration, setPlanFilterDuration] = useState(300);
+  const [planFilterDay, setPlanFilterDay] = useState('ALL');
   const [newTraining, setNewTraining] = useState({
     name: '', description: '', day: DayOfWeek.MONDAY,
     training_type: TrainingType.CUSTOM, est_time: 3600, exercises: []
   });
+  const dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const emptySchedule = () => ({ 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] });
   const [newPlan, setNewPlan] = useState({
-    name: '', description: '',
-    schedule: { [DayOfWeek.MONDAY]: [], [DayOfWeek.TUESDAY]: [], [DayOfWeek.WEDNESDAY]: [], [DayOfWeek.THURSDAY]: [], [DayOfWeek.FRIDAY]: [], [DayOfWeek.SATURDAY]: [], [DayOfWeek.SUNDAY]: [] }
+    name: '', description: '', schedule: emptySchedule()
   });
   const [pickingForPlanDay, setPickingForPlanDay] = useState(null);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerBodyPart, setPickerBodyPart] = useState('ALL');
 
+  // ===================== FETCH DATA ON MOUNT =====================
+  const fetchExercises = useCallback(async () => {
+    try {
+      const data = await getExercises({ limit: 500 });
+      setAllExercises(data);
+      setExercisesDB(buildExerciseMap(data));
+      setExercisesLoaded(true);
+    } catch (err) {
+      console.error('Failed to fetch exercises:', err);
+    }
+  }, []);
+
+  const fetchTrainings = useCallback(async (exMap) => {
+    try {
+      const data = await getTrainings({ limit: 500 });
+      const map = exMap || exercisesDB;
+      setTrainings(data.map(t => populateTraining(t, map)));
+    } catch (err) {
+      console.error('Failed to fetch trainings:', err);
+    }
+  }, [exercisesDB]);
+
+  const fetchPlans = useCallback(async () => {
+    try {
+      const data = await getWorkoutPlans({ limit: 500 });
+      setPlans(data);
+    } catch (err) {
+      console.error('Failed to fetch workout plans:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      setInitialLoading(true);
+      try {
+        // Fetch current user
+        try {
+          const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
+          if (res.ok) {
+            const auth = await res.json();
+            setCurrentUserId(auth.internal_uid || null);
+          }
+        } catch { /* not logged in */ }
+
+        const exercises = await getExercises({ limit: 500 });
+        setAllExercises(exercises);
+        const map = buildExerciseMap(exercises);
+        setExercisesDB(map);
+        setExercisesLoaded(true);
+
+        const [trainingsData, plansData] = await Promise.all([
+          getTrainings({ limit: 500 }),
+          getWorkoutPlans({ limit: 500 }),
+        ]);
+        setTrainings(trainingsData.map(t => populateTraining(t, map)));
+        setPlans(plansData);
+      } catch (err) {
+        console.error('Failed to load workout data:', err);
+      } finally {
+        setInitialLoading(false);
+      }
+    })();
+  }, []);
+
   const handleGenerateAi = async () => {
     if (!prompt.trim()) return;
     setIsLoading(true);
-    const generated = await generateWorkout(prompt);
-    if (generated) {
-      setTrainings([populateTraining(generated), ...trainings]);
-      setIsAiModalOpen(false);
-      setPrompt('');
-      setActiveTab('workouts');
+    try {
+      const generated = await generateWorkout(prompt);
+      if (generated) {
+        // Try to persist via API
+        const payload = {
+          name: generated.name,
+          exercises: generated.exercises,
+          est_time: generated.est_time || 3600,
+          day: generated.day || DayOfWeek.MONDAY,
+          training_type: generated.training_type || TrainingType.CUSTOM,
+          description: generated.description || null,
+        };
+        try {
+          const saved = await createTraining(payload);
+          setTrainings(prev => [populateTraining(saved, exercisesDB), ...prev]);
+        } catch {
+          // Fallback: just show locally
+          setTrainings(prev => [populateTraining(generated, exercisesDB), ...prev]);
+        }
+        setIsAiModalOpen(false);
+        setPrompt('');
+        setActiveTab('workouts');
+      }
+    } catch (err) {
+      console.error('AI generation failed:', err);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleAddExerciseToTraining = (exerciseId) => {
@@ -111,8 +192,45 @@ export default function Workouts() {
       sets: [{ volume: 10, units: SetUnit.REPS }, { volume: 10, units: SetUnit.REPS }, { volume: 10, units: SetUnit.REPS }],
       rest_between_sets: 60, notes: ''
     };
-    setNewTraining(prev => ({ ...prev, exercises: [...(prev.exercises || []), newEx] }));
+    if (editingTraining) {
+      setEditingTraining(prev => ({ ...prev, exercises: [...(prev.exercises || []), newEx] }));
+    } else {
+      setNewTraining(prev => ({ ...prev, exercises: [...(prev.exercises || []), newEx] }));
+    }
     setShowExercisePicker(false);
+  };
+
+  const handleEditUpdateSet = (exIndex, setIndex, field, value) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const sets = [...exercises[exIndex].sets];
+      sets[setIndex] = { ...sets[setIndex], [field]: value };
+      exercises[exIndex] = { ...exercises[exIndex], sets };
+      return { ...prev, exercises };
+    });
+  };
+
+  const handleEditAddSet = (exIndex) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const ex = exercises[exIndex];
+      exercises[exIndex] = { ...ex, sets: [...ex.sets, { volume: 10, units: SetUnit.REPS }] };
+      return { ...prev, exercises };
+    });
+  };
+
+  const handleEditRemoveSet = (exIndex, setIndex) => {
+    setEditingTraining(prev => {
+      const exercises = [...(prev.exercises || [])];
+      const ex = exercises[exIndex];
+      if (ex.sets.length <= 1) return prev;
+      exercises[exIndex] = { ...ex, sets: ex.sets.filter((_, i) => i !== setIndex) };
+      return { ...prev, exercises };
+    });
+  };
+
+  const togglePlanTraining = (tid) => {
+    setExpandedPlanTrainings(prev => ({ ...prev, [tid]: !prev[tid] }));
   };
 
   const handleRemoveExercise = (index) => {
@@ -148,48 +266,178 @@ export default function Workouts() {
     });
   };
 
-  const handleSaveTraining = () => {
+  const handleSaveTraining = async () => {
     if (!newTraining.name || !newTraining.exercises?.length) return;
-    const finalTraining = {
-      _id: crypto.randomUUID(), name: newTraining.name, exercises: newTraining.exercises,
-      est_time: newTraining.est_time || 3600, day: newTraining.day || DayOfWeek.MONDAY,
-      training_type: newTraining.training_type || TrainingType.CUSTOM, description: newTraining.description
-    };
-    setTrainings([populateTraining(finalTraining), ...trainings]);
-    setIsWorkoutCreatorOpen(false);
-    setNewTraining({ name: '', description: '', day: DayOfWeek.MONDAY, training_type: TrainingType.CUSTOM, est_time: 3600, exercises: [] });
+    setIsLoading(true);
+    try {
+      const payload = {
+        name: newTraining.name,
+        exercises: newTraining.exercises.map(ex => ({
+          exercise_id: ex.exercise_id,
+          sets: ex.sets,
+          rest_between_sets: ex.rest_between_sets || 60,
+          notes: ex.notes || null,
+        })),
+        est_time: newTraining.est_time || 3600,
+        day: newTraining.day || DayOfWeek.MONDAY,
+        training_type: newTraining.training_type || TrainingType.CUSTOM,
+        description: newTraining.description || null,
+      };
+      const saved = await createTraining(payload);
+      setTrainings(prev => [populateTraining(saved, exercisesDB), ...prev]);
+      setIsWorkoutCreatorOpen(false);
+      setNewTraining({ name: '', description: '', day: DayOfWeek.MONDAY, training_type: TrainingType.CUSTOM, est_time: 3600, exercises: [] });
+    } catch (err) {
+      console.error('Failed to save training:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAddToPlanSchedule = (trainingId) => {
-    if (pickingForPlanDay !== null) {
-      setNewPlan(prev => ({
-        ...prev,
-        schedule: { ...prev.schedule, [pickingForPlanDay]: [...prev.schedule[pickingForPlanDay], trainingId] }
-      }));
+    if (pickingForPlanDay === 'edit') {
+      setEditingPlan(prev => ({...prev, trainings: [...(prev.trainings || []), trainingId]}));
+      setPickingForPlanDay(null);
+    } else if (pickingForPlanDay !== null) {
+      setNewPlan(prev => {
+        const schedule = { ...prev.schedule };
+        schedule[pickingForPlanDay] = [...(schedule[pickingForPlanDay] || []), trainingId];
+        return { ...prev, schedule };
+      });
       setPickingForPlanDay(null);
     }
   };
 
-  const handleRemoveFromPlanSchedule = (day, index) => {
+  const handleRemoveFromSchedule = (day, index) => {
     setNewPlan(prev => {
-      const newDaySchedule = [...prev.schedule[day]];
-      newDaySchedule.splice(index, 1);
-      return { ...prev, schedule: { ...prev.schedule, [day]: newDaySchedule } };
+      const schedule = { ...prev.schedule };
+      schedule[day] = schedule[day].filter((_, i) => i !== index);
+      return { ...prev, schedule };
     });
   };
 
-  const handleSavePlan = () => {
-    const totalWorkouts = Object.values(newPlan.schedule).flat().length;
-    if (!newPlan.name || totalWorkouts === 0) return;
-    const uniqueTrainings = Array.from(new Set(Object.values(newPlan.schedule).flat()));
-    const createdPlan = {
-      _id: crypto.randomUUID(), name: newPlan.name, description: newPlan.description,
-      schedule: newPlan.schedule, trainings: uniqueTrainings, trainer_id: 'self',
-      clients: [], is_public: false, total_likes: 0
-    };
-    setPlans([createdPlan, ...plans]);
-    setIsPlanCreatorOpen(false);
-    setNewPlan({ name: '', description: '', schedule: { [DayOfWeek.MONDAY]: [], [DayOfWeek.TUESDAY]: [], [DayOfWeek.WEDNESDAY]: [], [DayOfWeek.THURSDAY]: [], [DayOfWeek.FRIDAY]: [], [DayOfWeek.SATURDAY]: [], [DayOfWeek.SUNDAY]: [] } });
+  const scheduleTrainingIds = useMemo(() => {
+    if (!newPlan.schedule) return [];
+    return Object.values(newPlan.schedule).flat();
+  }, [newPlan.schedule]);
+
+  const handleSavePlan = async () => {
+    if (!newPlan.name || !scheduleTrainingIds.length) return;
+    setIsLoading(true);
+    try {
+      const payload = {
+        name: newPlan.name,
+        description: newPlan.description || null,
+        trainings: scheduleTrainingIds,
+        is_public: false,
+      };
+      const saved = await createWorkoutPlan(payload);
+      setPlans(prev => [saved, ...prev]);
+      setIsPlanCreatorOpen(false);
+      setNewPlan({ name: '', description: '', schedule: emptySchedule() });
+    } catch (err) {
+      console.error('Failed to save plan:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStartEditTraining = (training) => {
+    setEditingTraining({
+      _id: training._id,
+      name: training.name,
+      description: training.description || '',
+      day: training.day,
+      training_type: training.training_type,
+      est_time: training.est_time,
+      exercises: training.exercises.map(ex => ({
+        exercise_id: ex.exercise_id,
+        sets: ex.sets,
+        rest_between_sets: ex.rest_between_sets || 60,
+        notes: ex.notes || '',
+      })),
+    });
+    setSelectedTraining(null);
+  };
+
+  const handleSaveEditTraining = async () => {
+    if (!editingTraining || !editingTraining.name || !editingTraining.exercises?.length) return;
+    setIsLoading(true);
+    try {
+      const payload = {
+        name: editingTraining.name,
+        exercises: editingTraining.exercises.map(ex => ({
+          exercise_id: ex.exercise_id,
+          sets: ex.sets,
+          rest_between_sets: ex.rest_between_sets || 60,
+          notes: ex.notes || null,
+        })),
+        est_time: editingTraining.est_time,
+        day: editingTraining.day,
+        training_type: editingTraining.training_type,
+        description: editingTraining.description || null,
+      };
+      const saved = await updateTraining(editingTraining._id, payload);
+      setTrainings(prev => prev.map(t => t._id === saved._id ? populateTraining(saved, exercisesDB) : t));
+      setEditingTraining(null);
+    } catch (err) {
+      console.error('Failed to update training:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteTraining = async (trainingId) => {
+    if (!confirm('Delete this workout?')) return;
+    try {
+      await deleteTraining(trainingId);
+      setTrainings(prev => prev.filter(t => t._id !== trainingId));
+      setSelectedTraining(null);
+    } catch (err) {
+      console.error('Failed to delete training:', err);
+    }
+  };
+
+  const handleStartEditPlan = (plan) => {
+    setEditingPlan({
+      _id: plan._id,
+      name: plan.name,
+      description: plan.description || '',
+      trainings: plan.trainings || [],
+      is_public: plan.is_public,
+    });
+    setSelectedPlan(null);
+  };
+
+  const handleSaveEditPlan = async () => {
+    if (!editingPlan || !editingPlan.name) return;
+    setIsLoading(true);
+    try {
+      const payload = {
+        name: editingPlan.name,
+        description: editingPlan.description || null,
+        trainings: editingPlan.trainings,
+        is_public: editingPlan.is_public,
+      };
+      const saved = await updateWorkoutPlan(editingPlan._id, payload);
+      setPlans(prev => prev.map(p => p._id === saved._id ? saved : p));
+      setEditingPlan(null);
+    } catch (err) {
+      console.error('Failed to update plan:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!confirm('Delete this plan?')) return;
+    try {
+      await deleteWorkoutPlan(planId);
+      setPlans(prev => prev.filter(p => p._id !== planId));
+      setSelectedPlan(null);
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
+    }
   };
 
   const formatDuration = (seconds) => `${Math.floor(seconds / 60)} min`;
@@ -210,37 +458,39 @@ export default function Workouts() {
       if (t.est_time / 60 > filterMaxTime) return false;
       if (filterBodyPart !== 'ALL' && !t.exercises.some(ex => ex._exerciseDetails?.body_part === filterBodyPart)) return false;
       if (filterAdvancement !== 'ALL' && !t.exercises.some(ex => ex._exerciseDetails?.advancement === filterAdvancement)) return false;
+      if (filterTrainingType !== 'ALL' && t.training_type !== filterTrainingType) return false;
       return true;
     });
-  }, [trainings, workoutSearchQuery, filterMaxTime, filterBodyPart, filterAdvancement]);
+  }, [trainings, workoutSearchQuery, filterMaxTime, filterBodyPart, filterAdvancement, filterTrainingType]);
 
   const filteredPlans = useMemo(() => {
     return plans.filter(p => {
       if (planSearchQuery && !p.name.toLowerCase().includes(planSearchQuery.toLowerCase())) return false;
-      const frequency = Object.values(p.schedule).filter(day => day.length > 0).length;
+      const frequency = p.trainings?.length || 0;
       if (planFilterFrequency !== 'ALL' && frequency !== planFilterFrequency) return false;
-      const totalDuration = Object.values(p.schedule).flat().reduce((acc, tid) => {
+      const totalDuration = (p.trainings || []).reduce((acc, tid) => {
         const t = trainings.find(tr => tr._id === tid);
         return acc + (t ? t.est_time / 60 : 0);
       }, 0);
       if (totalDuration > planFilterDuration) return false;
+      if (planFilterDay !== 'ALL') {
+        const planHasDay = (p.trainings || []).some(tid => {
+          const t = trainings.find(tr => tr._id === tid);
+          return t && t.day === planFilterDay;
+        });
+        if (!planHasDay) return false;
+      }
       return true;
     });
-  }, [plans, planSearchQuery, planFilterFrequency, planFilterDuration, trainings]);
+  }, [plans, planSearchQuery, planFilterFrequency, planFilterDuration, planFilterDay, trainings]);
 
   const filteredExercisesForPicker = useMemo(() => {
-    return Object.values(MOCK_EXERCISES_DB).filter(ex => {
+    return allExercises.filter(ex => {
       const matchesName = ex.name.toLowerCase().includes(pickerSearch.toLowerCase());
       const matchesBody = pickerBodyPart === 'ALL' || ex.body_part === pickerBodyPart;
       return matchesName && matchesBody;
     });
-  }, [pickerSearch, pickerBodyPart]);
-
-  const dayNames = {
-    [DayOfWeek.MONDAY]: "Monday", [DayOfWeek.TUESDAY]: "Tuesday", [DayOfWeek.WEDNESDAY]: "Wednesday",
-    [DayOfWeek.THURSDAY]: "Thursday", [DayOfWeek.FRIDAY]: "Friday", [DayOfWeek.SATURDAY]: "Saturday",
-    [DayOfWeek.SUNDAY]: "Sunday",
-  };
+  }, [allExercises, pickerSearch, pickerBodyPart]);
 
   return (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="p-6 md:p-10">
@@ -292,7 +542,7 @@ export default function Workouts() {
             <AnimatePresence>
               {showPlanFilters && (
                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                  <div className="glass-panel rounded-2xl p-6 grid grid-cols-1 md:grid-cols-2 gap-8 border-dashed">
+                  <div className="glass-panel rounded-2xl p-6 grid grid-cols-1 md:grid-cols-3 gap-8 border-dashed">
                     <div className="space-y-3">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Calendar className="w-3 h-3" /> Frequency (Days / Week)</label>
                       <div className="flex flex-wrap gap-2">
@@ -302,6 +552,21 @@ export default function Workouts() {
                             {f === 'ALL' ? 'Any' : `${f}d`}
                           </button>
                         ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Calendar className="w-3 h-3" /> Training Day</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['ALL', ...Object.entries(DayOfWeek).map(([k, v]) => ({ label: k.charAt(0) + k.slice(1).toLowerCase(), value: v }))].map(item => {
+                          const val = item === 'ALL' ? 'ALL' : item.value;
+                          const label = item === 'ALL' ? 'All' : item.label;
+                          return (
+                            <button key={val} onClick={() => setPlanFilterDay(val)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${planFilterDay === val ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -318,10 +583,13 @@ export default function Workouts() {
               )}
             </AnimatePresence>
           </div>
+          {initialLoading ? (
+            <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-brand-500" /></div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPlans.map((plan) => {
-              const workoutCount = Object.values(plan.schedule).filter(day => day.length > 0).length;
-              const uniqueWorkoutIds = Array.from(new Set(Object.values(plan.schedule).flat()));
+              const workoutCount = plan.trainings?.length || 0;
+              const uniqueWorkoutIds = Array.from(new Set(plan.trainings || []));
               return (
                 <motion.div key={plan._id} layoutId={`plan-${plan._id}`} onClick={() => setSelectedPlan(plan)}
                   initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
@@ -330,35 +598,102 @@ export default function Workouts() {
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2 ml-2 group-hover:text-brand-600 transition-colors">{plan.name}</h3>
                   <p className="text-sm text-slate-500 mb-4 ml-2 line-clamp-2">{plan.description || "Personal goal plan."}</p>
                   <div className="flex gap-2 mb-4 ml-2">
-                    <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200">{workoutCount} Days / Week</span>
+                    <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200">{workoutCount} Trainings</span>
+                    {plan.total_likes > 0 && <span className="bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-full text-xs font-bold text-red-500 border border-red-200">{plan.total_likes} Likes</span>}
                   </div>
                   <div className="ml-2 space-y-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Highlights:</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Trainings:</p>
                     {uniqueWorkoutIds.slice(0, 3).map(tid => {
                       const t = trainings.find(tr => tr._id === tid);
                       return t ? <div key={tid} className="flex items-center gap-2 text-sm text-slate-600"><Dumbbell className="w-3.5 h-3.5 text-brand-500" />{t.name}</div> : null;
                     })}
+                    {uniqueWorkoutIds.length > 3 && <p className="text-xs text-slate-400 ml-5">+{uniqueWorkoutIds.length - 3} more</p>}
                   </div>
                 </motion.div>
               );
             })}
           </div>
+          )}
         </div>
       )}
 
       {/* WORKOUTS TAB */}
       {activeTab === 'workouts' && (
         <div className="space-y-6">
-          <div className="glass-panel p-2 rounded-2xl flex flex-col md:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input type="text" value={workoutSearchQuery} onChange={(e) => setWorkoutSearchQuery(e.target.value)} placeholder="Search workouts..."
-                className="w-full pl-12 pr-4 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none font-medium" />
+          <div className="space-y-4">
+            <div className="glass-panel p-2 rounded-2xl flex flex-col md:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                <input type="text" value={workoutSearchQuery} onChange={(e) => setWorkoutSearchQuery(e.target.value)} placeholder="Search workouts..."
+                  className="w-full pl-12 pr-4 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none font-medium" />
+              </div>
+              <button onClick={() => setShowWorkoutFilters(!showWorkoutFilters)}
+                className={`px-6 py-3 rounded-xl flex items-center gap-2 font-bold transition-all ${showWorkoutFilters ? 'bg-slate-800 text-white shadow-lg' : 'bg-white/50 dark:bg-white/5 text-slate-600 hover:bg-white/80'}`}>
+                <Filter className="w-4 h-4" /> Filters
+              </button>
             </div>
+            <AnimatePresence>
+              {showWorkoutFilters && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <div className="glass-panel rounded-2xl p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 border-dashed">
+                    {/* Training Type */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Layers className="w-3 h-3" /> Training Type</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['ALL', ...Object.values(TrainingType)].map(tt => (
+                          <button key={tt} onClick={() => setFilterTrainingType(tt)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterTrainingType === tt ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                            {tt === 'ALL' ? 'All' : tt.replace('_', ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Body Part */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Dumbbell className="w-3 h-3" /> Body Part</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['ALL', ...Object.values(BodyPart)].map(bp => (
+                          <button key={bp} onClick={() => setFilterBodyPart(bp)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterBodyPart === bp ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                            {bp === 'ALL' ? 'All' : bp.replace('_', ' ')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Advancement */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Award className="w-3 h-3" /> Advancement</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['ALL', ...Object.values(Advancement)].map(adv => (
+                          <button key={adv} onClick={() => setFilterAdvancement(adv)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterAdvancement === adv ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
+                            {adv === 'ALL' ? 'All' : adv}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Max Duration */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between ml-1">
+                        <span className="flex items-center gap-2"><Clock className="w-3 h-3" /> Max Duration</span>
+                        <span className="text-brand-500">{filterMaxTime} min</span>
+                      </label>
+                      <input type="range" min="5" max="180" step="5" value={filterMaxTime} onChange={(e) => setFilterMaxTime(parseInt(e.target.value))}
+                        className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-500" />
+                      <div className="flex justify-between text-[9px] text-slate-400 font-bold px-1"><span>5m</span><span>180m</span></div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
+          {initialLoading ? (
+            <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-brand-500" /></div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTrainings.map((training) => (
               <motion.div key={training._id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
+                onClick={() => setSelectedTraining(training)}
                 className="glass-panel rounded-3xl p-6 relative overflow-hidden group cursor-pointer">
                 <div className="flex justify-between items-start mb-4">
                   <h3 className="text-lg font-bold text-slate-800 dark:text-white group-hover:text-brand-600 transition-colors">{training.name}</h3>
@@ -367,6 +702,7 @@ export default function Workouts() {
                 <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
                   <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatDuration(training.est_time)}</span></div>
                   <div className="flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" /><span>{training.exercises.length} exercises</span></div>
+                  <div className="flex items-center gap-1 ml-auto"><Calendar className="w-3.5 h-3.5 text-slate-400" /><span className="text-xs">{dayNames[training.day]}</span></div>
                 </div>
                 <div className="space-y-2">
                   {training.exercises.slice(0, 3).map((ex, i) => (
@@ -376,10 +712,12 @@ export default function Workouts() {
                       <span className="text-slate-400 text-xs ml-auto">{ex.sets.length} x {ex.sets[0]?.volume} {ex.sets[0]?.units}</span>
                     </div>
                   ))}
+                  {training.exercises.length > 3 && <p className="text-xs text-slate-400 ml-3">+{training.exercises.length - 3} more</p>}
                 </div>
               </motion.div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -428,8 +766,8 @@ export default function Workouts() {
                           <div className="flex items-center gap-3">
                             <div className="p-2.5 bg-brand-500/10 text-brand-500 rounded-2xl"><Dumbbell className="w-5 h-5" /></div>
                             <div>
-                              <span className="font-bold text-slate-800 dark:text-white">{MOCK_EXERCISES_DB[ex.exercise_id]?.name || 'Exercise'}</span>
-                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{MOCK_EXERCISES_DB[ex.exercise_id]?.body_part.replace('_', ' ')}</p>
+                              <span className="font-bold text-slate-800 dark:text-white">{exercisesDB[ex.exercise_id]?.name || 'Exercise'}</span>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(exercisesDB[ex.exercise_id]?.body_part || '').replace('_', ' ')}</p>
                             </div>
                           </div>
                           <button onClick={() => handleRemoveExercise(exIdx)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
@@ -529,60 +867,74 @@ export default function Workouts() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsPlanCreatorOpen(false)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="w-full max-w-[94vw] bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[94vh] shadow-2xl border border-white/40 overflow-hidden">
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
               <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
                 <div className="pl-3">
-                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Weekly Goal Architect</h3>
-                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Crystalline Program Mapping</p>
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Workout Plan Architect</h3>
+                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Build Your Training Program</p>
                 </div>
                 <button onClick={() => setIsPlanCreatorOpen(false)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors group"><X className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-white transition-colors" /></button>
               </div>
-              <div className="flex-1 overflow-y-auto p-8 space-y-10">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-8 bg-brand-500/5 dark:bg-white/5 rounded-[2rem] border-2 border-dashed border-brand-500/10 backdrop-blur-sm">
+              <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-brand-500/5 dark:bg-white/5 rounded-[2rem] border-2 border-dashed border-brand-500/10 backdrop-blur-sm">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Hash className="w-4 h-4 text-brand-500" /> Plan Identity</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Hash className="w-4 h-4 text-brand-500" /> Plan Name</label>
                     <input type="text" placeholder="e.g. Project Shred: Summer Edition" value={newPlan.name} onChange={(e) => setNewPlan({...newPlan, name: e.target.value})}
                       className="w-full p-4 liquid-input rounded-2xl outline-none font-medium" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Type className="w-4 h-4 text-brand-500" /> Primary Vision</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Type className="w-4 h-4 text-brand-500" /> Description</label>
                     <input type="text" placeholder="e.g. Focus on strength gain and fat loss" value={newPlan.description} onChange={(e) => setNewPlan({...newPlan, description: e.target.value})}
                       className="w-full p-4 liquid-input rounded-2xl outline-none font-medium" />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-                  {Object.values(DayOfWeek).filter(v => typeof v === 'number').map((day) => (
-                    <div key={day} className="flex flex-col min-h-[380px] bg-white/30 dark:bg-white/5 border border-white/50 dark:border-white/5 p-5 rounded-[2rem] shadow-sm backdrop-blur-sm transition-all hover:border-brand-500/20 group/day">
-                      <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-100 dark:border-white/5">
-                        <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg"><Calendar className="w-3.5 h-3.5 text-brand-500" /></div>
-                        <h3 className="font-bold text-slate-800 dark:text-white text-xs">{dayNames[day]}</h3>
-                      </div>
-                      <div className="flex-1 flex flex-col gap-3">
-                        {newPlan.schedule[day].map((tid, idx) => {
-                          const training = trainings.find(t => t._id === tid);
-                          return training ? (
-                            <motion.div key={idx} initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                              className="bg-white/80 dark:bg-slate-800/80 rounded-2xl p-3 border border-slate-100 dark:border-white/10 relative group/card shadow-sm">
-                              <h4 className="text-[10px] font-bold text-slate-700 dark:text-slate-200 leading-tight pr-6">{training.name}</h4>
-                              <div className="flex items-center gap-2 mt-1.5 opacity-60"><div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div><p className="text-[9px] font-bold uppercase tracking-widest">{training.training_type}</p></div>
-                              <button onClick={() => handleRemoveFromPlanSchedule(day, idx)} className="absolute top-1.5 right-1.5 p-1 bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-red-500 rounded-lg opacity-0 group-hover/card:opacity-100 transition-all z-20" title="Remove workout"><X className="w-3.5 h-3.5" /></button>
-                            </motion.div>
-                          ) : null;
-                        })}
-                        <button onClick={() => setPickingForPlanDay(day)}
-                          className="w-full py-5 rounded-2xl border-2 border-dashed border-slate-100 dark:border-white/5 text-slate-300 hover:border-brand-500/50 hover:bg-brand-500/5 hover:text-brand-600 transition-all flex flex-col items-center justify-center gap-1.5 mt-auto">
-                          <Plus className="w-5 h-5" /><span className="text-[10px] font-bold uppercase tracking-widest">Assign</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 px-1"><Calendar className="w-4 h-4 text-brand-500" /> Weekly Schedule</label>
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4, 5, 6, 7].map(day => {
+                      const dayTrainings = newPlan.schedule?.[day] || [];
+                      return (
+                        <div key={day} className="p-4 bg-white/40 dark:bg-white/5 rounded-2xl border border-white/50 dark:border-white/10 backdrop-blur-sm">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                              <span className="w-7 h-7 rounded-lg bg-brand-500/10 text-brand-500 flex items-center justify-center text-[10px] font-black">{dayNames[day].slice(0, 2).toUpperCase()}</span>
+                              {dayNames[day]}
+                            </h4>
+                            <button onClick={() => setPickingForPlanDay(day)} className="flex items-center gap-1.5 text-brand-600 dark:text-brand-400 font-bold text-xs bg-brand-500/10 px-3 py-1.5 rounded-lg hover:bg-brand-500/20 transition-all active:scale-95"><Plus className="w-3.5 h-3.5" /> Add</button>
+                          </div>
+                          {dayTrainings.length > 0 ? (
+                            <div className="space-y-2 mt-2">
+                              {dayTrainings.map((tid, idx) => {
+                                const t = trainings.find(tr => tr._id === tid);
+                                return t ? (
+                                  <motion.div key={`${day}-${idx}`} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                                    className="flex items-center justify-between p-3 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5 group">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-1.5 bg-brand-500/10 text-brand-500 rounded-lg"><Activity className="w-4 h-4" /></div>
+                                      <div>
+                                        <span className="font-bold text-sm text-slate-800 dark:text-white">{t.name}</span>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type} &bull; {formatDuration(t.est_time)}</p>
+                                      </div>
+                                    </div>
+                                    <button onClick={() => handleRemoveFromSchedule(day, idx)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  </motion.div>
+                                ) : null;
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-400 italic mt-1 ml-9">Rest day</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
               <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
                 <button onClick={() => setIsPlanCreatorOpen(false)} className="px-6 py-2.5 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-800 dark:hover:text-white transition-colors">Cancel</button>
-                <button onClick={handleSavePlan} disabled={!newPlan.name || Object.values(newPlan.schedule).flat().length === 0}
+                <button onClick={handleSavePlan} disabled={!newPlan.name || !scheduleTrainingIds.length}
                   className="liquid-btn liquid-btn-primary px-12 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
-                  <Save className="w-4 h-4" /> Finalize Plan
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Finalize Plan
                 </button>
               </div>
             </motion.div>
@@ -598,7 +950,7 @@ export default function Workouts() {
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="w-full max-w-lg bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2rem] relative z-10 flex flex-col max-h-[70vh] shadow-2xl border border-white/40 overflow-hidden">
               <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
-                <div className="pl-2"><h3 className="font-bold text-lg text-slate-800 dark:text-white">Assign to {dayNames[pickingForPlanDay]}</h3></div>
+                <div className="pl-2"><h3 className="font-bold text-lg text-slate-800 dark:text-white">{pickingForPlanDay === 'edit' ? 'Add Training to Plan' : `Assign Training — ${dayNames[pickingForPlanDay]}`}</h3></div>
                 <button onClick={() => setPickingForPlanDay(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
@@ -618,6 +970,337 @@ export default function Workouts() {
                 {trainings.length === 0 && (
                   <div className="text-center py-16 opacity-40"><p className="text-xs font-bold uppercase tracking-widest">No custom sessions found</p><p className="text-[10px] mt-2">Create some workouts first to assign them to a plan.</p></div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* TRAINING DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedTraining && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedTraining(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3 flex-1 min-w-0">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm truncate">{selectedTraining.name}</h3>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(selectedTraining.training_type)}`}>{selectedTraining.training_type?.replace('_', ' ')}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{formatDuration(selectedTraining.est_time)}</span>
+                    <span className="text-[10px] text-slate-400 font-bold">{dayNames[selectedTraining.day]}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleStartEditTraining(selectedTraining)} className="p-2.5 hover:bg-brand-500/10 rounded-full transition-colors group" title="Edit"><Edit3 className="w-4 h-4 text-slate-400 group-hover:text-brand-500" /></button>
+                  <button onClick={() => handleDeleteTraining(selectedTraining._id)} className="p-2.5 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors group" title="Delete"><Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-500" /></button>
+                  <button onClick={() => setSelectedTraining(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {selectedTraining.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedTraining.description}</p>}
+                {selectedTraining.exercises.map((ex, i) => (
+                  <div key={i} className="p-5 bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Dumbbell className="w-5 h-5" /></div>
+                      <div>
+                        <h4 className="font-bold text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} • {ex._exerciseDetails?.advancement || ''}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {ex.sets.map((set, si) => (
+                        <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                          <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                          <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2 ml-1">Rest: {ex.rest_between_sets}s between sets</p>}
+                    {ex.notes && <p className="text-xs text-slate-500 mt-2 ml-1 italic">{ex.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* TRAINING EDIT MODAL */}
+      <AnimatePresence>
+        {editingTraining && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingTraining(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Edit Workout</h3>
+                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Modify Session Details</p>
+                </div>
+                <button onClick={() => setEditingTraining(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Title</label>
+                    <input type="text" value={editingTraining.name} onChange={e => setEditingTraining({...editingTraining, name: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Type</label>
+                    <select value={editingTraining.training_type} onChange={e => setEditingTraining({...editingTraining, training_type: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
+                      {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Day</label>
+                    <select value={editingTraining.day} onChange={e => setEditingTraining({...editingTraining, day: parseInt(e.target.value)})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
+                      {Object.entries(DayOfWeek).map(([k, v]) => <option key={v} value={v}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
+                    <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Description</label>
+                  <input type="text" value={editingTraining.description} onChange={e => setEditingTraining({...editingTraining, description: e.target.value})} placeholder="Optional description"
+                    className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Activity className="w-4 h-4 text-brand-500" /> Exercises ({editingTraining.exercises?.length || 0})</label>
+                    <button onClick={() => setShowExercisePicker(true)} className="flex items-center gap-2 text-brand-600 dark:text-brand-400 font-bold text-sm bg-brand-500/10 px-4 py-2 rounded-xl hover:bg-brand-500/20 transition-all active:scale-95"><Plus className="w-4 h-4" /> Add Exercise</button>
+                  </div>
+                  {editingTraining.exercises?.map((ex, exIdx) => (
+                    <motion.div key={exIdx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                      className="p-5 bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-3xl shadow-sm group backdrop-blur-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-brand-500/10 text-brand-500 rounded-2xl"><Dumbbell className="w-5 h-5" /></div>
+                          <div>
+                            <span className="font-bold text-slate-800 dark:text-white">{exercisesDB[ex.exercise_id]?.name || 'Exercise'}</span>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(exercisesDB[ex.exercise_id]?.body_part || '').replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setEditingTraining(prev => ({...prev, exercises: prev.exercises.filter((_, idx) => idx !== exIdx)}))}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {ex.sets.map((set, setIdx) => (
+                          <div key={setIdx} className="flex gap-2 items-center bg-white/60 dark:bg-black/20 p-2 rounded-2xl border border-white/40 dark:border-white/5 group/set">
+                            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400">{setIdx + 1}</div>
+                            <input type="number" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value))}
+                              className="w-14 p-2 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
+                            <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
+                              className="flex-1 p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer">
+                              {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                            <button onClick={() => handleEditRemoveSet(exIdx, setIdx)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/set:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                        <button onClick={() => handleEditAddSet(exIdx)}
+                          className="w-full py-3 border-2 border-dashed border-slate-100 dark:border-white/5 rounded-2xl text-slate-300 text-[10px] font-bold hover:border-brand-500/50 hover:bg-brand-500/5 hover:text-brand-600 transition-all flex items-center justify-center gap-2">
+                          <Plus className="w-3.5 h-3.5" /> Add Set
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Rest (s)</label>
+                          <input type="number" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
+                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
+                          })} className="w-20 p-2 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Notes</label>
+                          <input type="text" value={ex.notes || ''} onChange={e => setEditingTraining(prev => {
+                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], notes: e.target.value }; return { ...prev, exercises };
+                          })} className="flex-1 p-2 liquid-input rounded-xl text-xs text-slate-800 dark:text-white outline-none font-medium" placeholder="Optional" />
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {(!editingTraining.exercises || editingTraining.exercises.length === 0) && (
+                    <div className="text-center py-12 border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[2rem] flex flex-col items-center gap-3 group hover:border-brand-500/30 transition-all cursor-pointer" onClick={() => setShowExercisePicker(true)}>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-full text-slate-300 group-hover:text-brand-500 transition-colors"><Activity className="w-8 h-8" /></div>
+                      <p className="text-xs font-bold text-slate-400">Click to add exercises</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
+                <button onClick={() => setEditingTraining(null)} className="px-6 py-2.5 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-800 dark:hover:text-white transition-colors">Cancel</button>
+                <button onClick={handleSaveEditTraining} disabled={!editingTraining.name || !editingTraining.exercises?.length}
+                  className="liquid-btn liquid-btn-primary px-10 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* PLAN DETAIL MODAL */}
+      <AnimatePresence>
+        {selectedPlan && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedPlan(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3 flex-1 min-w-0">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm truncate">{selectedPlan.name}</h3>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="text-[10px] text-slate-400 font-bold">{selectedPlan.trainings?.length || 0} trainings</span>
+                    {selectedPlan.total_likes > 0 && <span className="text-[10px] text-red-500 font-bold">{selectedPlan.total_likes} likes</span>}
+                    {selectedPlan.is_public && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 dark:bg-green-900/20 text-green-600 border border-green-200 dark:border-green-800">Public</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {currentUserId && selectedPlan.trainer_id === currentUserId && (
+                    <>
+                      <button onClick={() => handleStartEditPlan(selectedPlan)} className="p-2.5 hover:bg-brand-500/10 rounded-full transition-colors group" title="Edit"><Edit3 className="w-4 h-4 text-slate-400 group-hover:text-brand-500" /></button>
+                      <button onClick={() => handleDeletePlan(selectedPlan._id)} className="p-2.5 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors group" title="Delete"><Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-500" /></button>
+                    </>
+                  )}
+                  <button onClick={() => setSelectedPlan(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {selectedPlan.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedPlan.description}</p>}
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Layers className="w-3 h-3 text-brand-500" /> Trainings in this plan</label>
+                {(selectedPlan.trainings || []).map((tid, i) => {
+                  const t = trainings.find(tr => tr._id === tid);
+                  const isExpanded = expandedPlanTrainings[`${tid}-${i}`];
+                  return t ? (
+                    <div key={`${tid}-${i}`} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
+                      <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [`${tid}-${i}`]: !prev[`${tid}-${i}`] }))}
+                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/30 dark:hover:bg-white/[0.03] transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Activity className="w-5 h-5" /></div>
+                          <div>
+                            <h4 className="font-bold text-slate-800 dark:text-white">{t.name}</h4>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)} &bull; {dayNames[t.day]}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </div>
+                      </div>
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="px-4 pb-4 space-y-3 border-t border-white/30 dark:border-white/5 pt-3">
+                              {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
+                              {t.exercises.map((ex, ei) => (
+                                <div key={ei} className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                  <div className="flex items-center gap-3 mb-3">
+                                    <Dumbbell className="w-4 h-4 text-brand-500" />
+                                    <div>
+                                      <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
+                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} &bull; {ex._exerciseDetails?.advancement || ''}</p>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {ex.sets.map((set, si) => (
+                                      <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                        <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                                        <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                                        <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2">Rest: {ex.rest_between_sets}s between sets</p>}
+                                  {ex.notes && <p className="text-xs text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl text-xs text-slate-400 italic">Training {tid.slice(0, 8)}... not found</div>
+                  );
+                })}
+                {(!selectedPlan.trainings || selectedPlan.trainings.length === 0) && <p className="text-sm text-slate-400 text-center py-8">No trainings assigned to this plan.</p>}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* PLAN EDIT MODAL */}
+      <AnimatePresence>
+        {editingPlan && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingPlan(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                <div className="pl-3">
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm">Edit Plan</h3>
+                  <p className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-[0.2em]">Modify Plan Details</p>
+                </div>
+                <button onClick={() => setEditingPlan(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Plan Name</label>
+                    <input type="text" value={editingPlan.name} onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Description</label>
+                    <input type="text" value={editingPlan.description} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} placeholder="Optional"
+                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Public</label>
+                  <button onClick={() => setEditingPlan({...editingPlan, is_public: !editingPlan.is_public})}
+                    className={`w-12 h-6 rounded-full transition-all ${editingPlan.is_public ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <div className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${editingPlan.is_public ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Trainings ({editingPlan.trainings?.length || 0})</label>
+                    <button onClick={() => setPickingForPlanDay('edit')} className="flex items-center gap-1.5 text-brand-600 dark:text-brand-400 font-bold text-xs bg-brand-500/10 px-3 py-1.5 rounded-lg hover:bg-brand-500/20 transition-all"><Plus className="w-3.5 h-3.5" /> Add</button>
+                  </div>
+                  {(editingPlan.trainings || []).map((tid, i) => {
+                    const t = trainings.find(tr => tr._id === tid);
+                    return (
+                      <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl border border-white/50 dark:border-white/10 flex justify-between items-center group">
+                        <div className="flex items-center gap-3">
+                          <Activity className="w-4 h-4 text-brand-500" />
+                          <span className="font-bold text-sm text-slate-800 dark:text-white">{t?.name || tid.slice(0, 8) + '...'}</span>
+                          {t && <span className="text-[10px] text-slate-400">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)}</span>}
+                        </div>
+                        <button onClick={() => setEditingPlan(prev => ({...prev, trainings: prev.trainings.filter((_, idx) => idx !== i)}))}
+                          className="p-1.5 text-slate-300 hover:text-red-500 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
+                <button onClick={() => setEditingPlan(null)} className="px-6 py-2.5 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-800 dark:hover:text-white transition-colors">Cancel</button>
+                <button onClick={handleSaveEditPlan} disabled={!editingPlan.name}
+                  className="liquid-btn liquid-btn-primary px-10 py-2.5 rounded-2xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-50 disabled:grayscale transition-all">
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+                </button>
               </div>
             </motion.div>
           </div>
