@@ -5,11 +5,14 @@ import {
   Heart, MessageCircle, Share2, MoreHorizontal,
   Search, Flame, Clock, X,
   Eye, TrendingUp, Send, Plus, Hash, Loader2,
-  Pencil, Trash2, AlertTriangle
+  Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as forumAPI from '../services/forumService';
 import { batchGetDisplayNames } from '../services/userService';
+import { getRecipes, getRecipeById } from '../services/recipeService';
+import { getTrainings, getTraining } from '../services/workoutService';
+import { ENDPOINTS } from '../config/network';
 
 // ======================== UTILITIES ========================
 
@@ -41,6 +44,8 @@ const mapPost = (p) => ({
   content: p.content,
   tags: p.tags || [],
   images: p.images || [],
+  linked_recipes: p.linked_recipes || [],
+  linked_workouts: p.linked_workouts || [],
   likes: p.total_likes ?? 0,
   views: p.views_count ?? 0,
   commentCount: 0,
@@ -585,7 +590,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
 
 // ======================== POST CARD ========================
 
-function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, onEdit, onDelete, viewedPostIdsRef, authorName }) {
+function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, onEdit, onDelete, viewedPostIdsRef, authorName, linkedItemNames }) {
   const [localLiked, setLocalLiked] = useState(isLiked);
   const [likeCount, setLikeCount] = useState(post.likes);
   const cardRef = useRef(null);
@@ -732,6 +737,44 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
         </div>
       )}
 
+      {/* Linked Recipes */}
+      {post.linked_recipes?.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {post.linked_recipes.map((recipeId) => (
+            <a
+              key={recipeId}
+              href={`/recipes?id=${recipeId}`}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/50 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors group"
+            >
+              <ChefHat className="w-4 h-4 text-orange-500" />
+              <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                {linkedItemNames?.recipes?.[recipeId] || 'Recipe'}
+              </span>
+              <ExternalLink className="w-3 h-3 text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Linked Workouts */}
+      {post.linked_workouts?.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {post.linked_workouts.map((workoutId) => (
+            <a
+              key={workoutId}
+              href={`/workouts?id=${workoutId}`}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors group"
+            >
+              <Dumbbell className="w-4 h-4 text-blue-500" />
+              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                {linkedItemNames?.workouts?.[workoutId] || 'Workout'}
+              </span>
+              <ExternalLink className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </a>
+          ))}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center gap-6 pt-4 mt-4 border-t border-slate-200/50 dark:border-white/10">
         <button
@@ -778,7 +821,7 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
 
 const SUGGESTED_TAGS = ['fitness', 'nutrition', 'recipe', 'workout', 'motivation', 'healthy', 'beginner', 'gains', 'weightloss', 'cardio'];
 
-function PostFormModal({ onClose, onSubmit, editPost }) {
+function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName }) {
   const isEdit = !!editPost;
   const [title, setTitle] = useState(editPost?.title || '');
   const [content, setContent] = useState(editPost?.content || '');
@@ -786,6 +829,82 @@ function PostFormModal({ onClose, onSubmit, editPost }) {
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Recipe/workout linking
+  const [linkedRecipes, setLinkedRecipes] = useState(editPost?.linked_recipes || []);
+  const [linkedWorkouts, setLinkedWorkouts] = useState(editPost?.linked_workouts || []);
+  const [showRecipePicker, setShowRecipePicker] = useState(false);
+  const [showWorkoutPicker, setShowWorkoutPicker] = useState(false);
+  const [recipes, setRecipes] = useState([]);
+  const [workouts, setWorkouts] = useState([]);
+  const [recipeSearch, setRecipeSearch] = useState('');
+  const [workoutSearch, setWorkoutSearch] = useState('');
+  const [loadingRecipes, setLoadingRecipes] = useState(false);
+  const [loadingWorkouts, setLoadingWorkouts] = useState(false);
+
+  // Recipe names cache for display
+  const [recipeNames, setRecipeNames] = useState({});
+  const [workoutNames, setWorkoutNames] = useState({});
+
+  // Fetch recipes when picker opens
+  useEffect(() => {
+    if (!showRecipePicker) return;
+    setLoadingRecipes(true);
+    getRecipes({ limit: 100 })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setRecipes(list);
+        // Cache names
+        const names = {};
+        list.forEach((r) => { names[r._id] = r.name; });
+        setRecipeNames((prev) => ({ ...prev, ...names }));
+      })
+      .catch(() => setRecipes([]))
+      .finally(() => setLoadingRecipes(false));
+  }, [showRecipePicker]);
+
+  // Fetch trainings when picker opens
+  useEffect(() => {
+    if (!showWorkoutPicker) return;
+    setLoadingWorkouts(true);
+    getTrainings({ limit: 200 })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setWorkouts(list);
+        const names = {};
+        list.forEach((w) => { names[w._id] = w.name; });
+        setWorkoutNames((prev) => ({ ...prev, ...names }));
+      })
+      .catch(() => setWorkouts([]))
+      .finally(() => setLoadingWorkouts(false));
+  }, [showWorkoutPicker]);
+
+  // Resolve names for pre-linked items in edit mode
+  useEffect(() => {
+    if (linkedRecipes.length > 0 && Object.keys(recipeNames).length === 0) {
+      getRecipes({ limit: 100 }).then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        const names = {};
+        list.forEach((r) => { names[r._id] = r.name; });
+        setRecipeNames(names);
+      }).catch(() => {});
+    }
+    if (linkedWorkouts.length > 0 && Object.keys(workoutNames).length === 0) {
+      getTrainings({ limit: 200 }).then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        const names = {};
+        list.forEach((w) => { names[w._id] = w.name; });
+        setWorkoutNames(names);
+      }).catch(() => {});
+    }
+  }, []);
+
+  const filteredRecipes = recipes.filter(
+    (r) => !linkedRecipes.includes(r._id) && r.name.toLowerCase().includes(recipeSearch.toLowerCase())
+  );
+  const filteredWorkouts = workouts.filter(
+    (w) => !linkedWorkouts.includes(w._id) && w.name.toLowerCase().includes(workoutSearch.toLowerCase())
+  );
 
   const filteredTags = SUGGESTED_TAGS.filter((t) => !tags.includes(t) && t.toLowerCase().includes(tagInput.toLowerCase()));
 
@@ -804,6 +923,8 @@ function PostFormModal({ onClose, onSubmit, editPost }) {
         title: title.trim(),
         content: content.trim(),
         tags: tags.length > 0 ? tags : undefined,
+        linked_recipes: isEdit ? linkedRecipes : (linkedRecipes.length > 0 ? linkedRecipes : undefined),
+        linked_workouts: isEdit ? linkedWorkouts : (linkedWorkouts.length > 0 ? linkedWorkouts : undefined),
       };
       if (isEdit && editPost.images?.length > 0) {
         payload.images = editPost.images;
@@ -813,6 +934,8 @@ function PostFormModal({ onClose, onSubmit, editPost }) {
       setSubmitting(false);
     }
   };
+
+  const displayName = authorName || currentUserId?.slice(0, 8) || 'User';
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onClose}>
@@ -831,6 +954,14 @@ function PostFormModal({ onClose, onSubmit, editPost }) {
         </div>
 
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Author info */}
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold border-2 border-white/80 shadow-md text-sm">
+              {displayName.slice(0, 2).toUpperCase()}
+            </div>
+            <span className="font-semibold text-slate-800 dark:text-white">{displayName}</span>
+          </div>
+
           {/* Title */}
           <input
             type="text"
@@ -900,6 +1031,150 @@ function PostFormModal({ onClose, onSubmit, editPost }) {
               )}
             </div>
           </div>
+
+          {/* Linked items display */}
+          {linkedRecipes.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400 uppercase">Linked Recipes</span>
+              <div className="flex flex-wrap gap-2">
+                {linkedRecipes.map((id) => (
+                  <span key={id} className="px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-xs font-bold border border-orange-200 dark:border-orange-700/50 flex items-center gap-1">
+                    <ChefHat className="w-3 h-3" />
+                    {recipeNames[id] || id.slice(0, 8)}
+                    <button onClick={() => setLinkedRecipes(linkedRecipes.filter((r) => r !== id))} className="hover:text-red-500 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {linkedWorkouts.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400 uppercase">Linked Workouts</span>
+              <div className="flex flex-wrap gap-2">
+                {linkedWorkouts.map((id) => (
+                  <span key={id} className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-bold border border-blue-200 dark:border-blue-700/50 flex items-center gap-1">
+                    <Dumbbell className="w-3 h-3" />
+                    {workoutNames[id] || id.slice(0, 8)}
+                    <button onClick={() => setLinkedWorkouts(linkedWorkouts.filter((w) => w !== id))} className="hover:text-red-500 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add Recipe / Add Workout buttons + pickers */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setShowRecipePicker(!showRecipePicker); setShowWorkoutPicker(false); }}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-bold border transition-all ${
+                  showRecipePicker
+                    ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400'
+                    : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-orange-50 dark:hover:bg-orange-900/10 hover:border-orange-200 dark:hover:border-orange-800'
+                }`}
+              >
+                <ChefHat className="w-4 h-4" /> Add Recipe <ChevronDown className={`w-3 h-3 transition-transform ${showRecipePicker ? 'rotate-180' : ''}`} />
+              </button>
+              {showRecipePicker && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 max-h-56 overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-slate-100 dark:border-white/5">
+                    <input
+                      type="text"
+                      value={recipeSearch}
+                      onChange={(e) => setRecipeSearch(e.target.value)}
+                      placeholder="Search recipes..."
+                      className="w-full px-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-sm outline-none focus:ring-1 focus:ring-brand-500"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {loadingRecipes ? (
+                      <div className="flex items-center justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-brand-500" /></div>
+                    ) : filteredRecipes.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-slate-400">No recipes found</div>
+                    ) : (
+                      filteredRecipes.map((r) => (
+                        <button
+                          key={r._id}
+                          onClick={() => {
+                            setLinkedRecipes([...linkedRecipes, r._id]);
+                            setRecipeNames((prev) => ({ ...prev, [r._id]: r.name }));
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-3 transition-colors"
+                        >
+                          {r.images?.[0] ? (
+                            <img src={r.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                              <ChefHat className="w-4 h-4 text-orange-500" />
+                            </div>
+                          )}
+                          <span className="text-slate-700 dark:text-slate-300 truncate">{r.name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setShowWorkoutPicker(!showWorkoutPicker); setShowRecipePicker(false); }}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-bold border transition-all ${
+                  showWorkoutPicker
+                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400'
+                    : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-200 dark:hover:border-blue-800'
+                }`}
+              >
+                <Dumbbell className="w-4 h-4" /> Add Workout <ChevronDown className={`w-3 h-3 transition-transform ${showWorkoutPicker ? 'rotate-180' : ''}`} />
+              </button>
+              {showWorkoutPicker && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 max-h-56 overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-slate-100 dark:border-white/5">
+                    <input
+                      type="text"
+                      value={workoutSearch}
+                      onChange={(e) => setWorkoutSearch(e.target.value)}
+                      placeholder="Search trainings..."
+                      className="w-full px-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-sm outline-none focus:ring-1 focus:ring-brand-500"
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {loadingWorkouts ? (
+                      <div className="flex items-center justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-brand-500" /></div>
+                    ) : filteredWorkouts.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-slate-400">No trainings found</div>
+                    ) : (
+                      filteredWorkouts.map((w) => (
+                        <button
+                          key={w._id}
+                          onClick={() => {
+                            setLinkedWorkouts([...linkedWorkouts, w._id]);
+                            setWorkoutNames((prev) => ({ ...prev, [w._id]: w.name }));
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-3 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                            <Dumbbell className="w-4 h-4 text-blue-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-slate-700 dark:text-slate-300 truncate block">{w.name}</span>
+                            {w.training_type && <span className="text-[10px] text-slate-400 capitalize">{w.training_type}</span>}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="p-4 bg-slate-50 dark:bg-black/20 flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
@@ -943,6 +1218,7 @@ export default function Community() {
   const fetchIdRef = useRef(0);
   const viewedPostIdsRef = useRef(new Set());
   const [authorNames, setAuthorNames] = useState({});
+  const [linkedItemNames, setLinkedItemNames] = useState({ recipes: {}, workouts: {} });
 
   // Fetch current user on mount
   useEffect(() => {
@@ -951,7 +1227,18 @@ export default function Community() {
         const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
         if (res.ok) {
           const auth = await res.json();
-          setCurrentUserId(auth.internal_uid || null);
+          const uid = auth.internal_uid || null;
+          setCurrentUserId(uid);
+          // Fetch own display name for Create Post modal
+          if (uid) {
+            batchGetDisplayNames([uid]).then((nameMap) => {
+              setAuthorNames((prev) => {
+                const next = { ...prev };
+                nameMap.forEach((name, id) => { next[id] = name; });
+                return next;
+              });
+            }).catch(() => {});
+          }
         }
       } catch {
         /* not logged in */
@@ -1019,6 +1306,44 @@ export default function Community() {
     }
   }, []);
 
+  // Resolve linked recipe/workout names for posts
+  const fetchLinkedItemNames = useCallback(async (postsList) => {
+    const recipeIds = [...new Set(postsList.flatMap((p) => p.linked_recipes || []))];
+    const workoutIds = [...new Set(postsList.flatMap((p) => p.linked_workouts || []))];
+
+    const newRecipeNames = {};
+    const newWorkoutNames = {};
+
+    // Fetch recipe names
+    if (recipeIds.length > 0) {
+      try {
+        const all = await getRecipes({ limit: 100 });
+        const list = Array.isArray(all) ? all : [];
+        list.forEach((r) => {
+          if (recipeIds.includes(r._id)) newRecipeNames[r._id] = r.name;
+        });
+      } catch { /* ignore */ }
+    }
+
+    // Fetch workout (training) names
+    if (workoutIds.length > 0) {
+      try {
+        const all = await getTrainings({ limit: 500 });
+        const list = Array.isArray(all) ? all : [];
+        list.forEach((w) => {
+          if (workoutIds.includes(w._id)) newWorkoutNames[w._id] = w.name;
+        });
+      } catch { /* ignore */ }
+    }
+
+    if (Object.keys(newRecipeNames).length > 0 || Object.keys(newWorkoutNames).length > 0) {
+      setLinkedItemNames((prev) => ({
+        recipes: { ...prev.recipes, ...newRecipeNames },
+        workouts: { ...prev.workouts, ...newWorkoutNames },
+      }));
+    }
+  }, []);
+
   // Fetch posts
   const fetchPosts = useCallback(
     async (reset = false) => {
@@ -1074,6 +1399,7 @@ export default function Community() {
           }
           fetchCommentCounts(mapped);
           fetchAuthorNames(mapped);
+          fetchLinkedItemNames(mapped);
         } else {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
@@ -1087,6 +1413,7 @@ export default function Community() {
           }
           fetchCommentCounts(mapped);
           fetchAuthorNames(mapped);
+          fetchLinkedItemNames(mapped);
         }
       } catch (e) {
         if (currentFetchId !== fetchIdRef.current) return;
@@ -1099,7 +1426,7 @@ export default function Community() {
         }
       }
     },
-    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames]
+    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames, fetchLinkedItemNames]
   );
 
   // Reset & fetch on sort/search/filter change
@@ -1283,6 +1610,7 @@ export default function Community() {
                   onDelete={handleDeletePost}
                   viewedPostIdsRef={viewedPostIdsRef}
                   authorName={authorNames[post.author_id]}
+                  linkedItemNames={linkedItemNames}
                 />
               ))}
             </div>
@@ -1304,11 +1632,11 @@ export default function Community() {
       </div>
 
       {/* Create Post Modal */}
-      <AnimatePresence>{isCreating && <PostFormModal onClose={() => setIsCreating(false)} onSubmit={handleCreatePost} />}</AnimatePresence>
+      <AnimatePresence>{isCreating && <PostFormModal onClose={() => setIsCreating(false)} onSubmit={handleCreatePost} currentUserId={currentUserId} authorName={authorNames[currentUserId]} />}</AnimatePresence>
 
       {/* Edit Post Modal (shared form) */}
       <AnimatePresence>
-        {editingPost && <PostFormModal onClose={() => setEditingPost(null)} onSubmit={handleEditPost} editPost={editingPost} />}
+        {editingPost && <PostFormModal onClose={() => setEditingPost(null)} onSubmit={handleEditPost} editPost={editingPost} currentUserId={currentUserId} authorName={authorNames[currentUserId]} />}
       </AnimatePresence>
 
       {/* Comment Modal */}

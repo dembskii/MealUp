@@ -33,6 +33,16 @@ class PostCreate(BaseModel):
         examples=[["https://example.com/image1.jpg"]],
         description="List of image URLs"
     )
+    linked_recipes: Optional[List[str]] = Field(
+        default=None,
+        examples=[["550e8400-e29b-41d4-a716-446655440001"]],
+        description="List of recipe IDs to link to the post"
+    )
+    linked_workouts: Optional[List[str]] = Field(
+        default=None,
+        examples=[["550e8400-e29b-41d4-a716-446655440002"]],
+        description="List of workout/exercise IDs to link to the post"
+    )
 
 
 class PostUpdate(BaseModel):
@@ -63,6 +73,14 @@ class PostUpdate(BaseModel):
         examples=[["https://example.com/new-image.jpg"]],
         description="Updated list of image URLs"
     )
+    linked_recipes: Optional[List[str]] = Field(
+        default=None,
+        description="Updated list of linked recipe IDs"
+    )
+    linked_workouts: Optional[List[str]] = Field(
+        default=None,
+        description="Updated list of linked workout/exercise IDs"
+    )
 
 
 class PostResponse(BaseModel):
@@ -91,6 +109,14 @@ class PostResponse(BaseModel):
         default=None,
         examples=[["https://example.com/image.jpg"]],
         description="List of image URLs"
+    )
+    linked_recipes: Optional[List[str]] = Field(
+        default=None,
+        description="List of linked recipe IDs"
+    )
+    linked_workouts: Optional[List[str]] = Field(
+        default=None,
+        description="List of linked workout/exercise IDs"
     )
     total_likes: int = Field(
         ge=0,
