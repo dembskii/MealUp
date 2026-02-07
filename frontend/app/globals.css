@@ -1,26 +1,136 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-brand-50: #effef7;
+  --color-brand-100: #dafeec;
+  --color-brand-200: #b8fcdb;
+  --color-brand-300: #81f8c2;
+  --color-brand-400: #44eba2;
+  --color-brand-500: #1bd384;
+  --color-brand-600: #0fab68;
+  --color-brand-700: #0d8856;
+  --color-brand-800: #0f6b47;
+  --color-brand-900: #0d583d;
+  --color-accent-500: #f97316;
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* --- Glass / Liquid Utility Classes --- */
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/40 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/40 dark:border-white/10 shadow-2xl shadow-slate-200/20 dark:shadow-black/30;
+  }
+
+  .liquid-card {
+    @apply bg-white/50 dark:bg-slate-800/50
+           backdrop-blur-xl border border-white/40 dark:border-white/10
+           shadow-[inset_0_1px_0_0_rgba(255,255,255,0.4)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)];
+  }
+
+  .liquid-btn {
+    @apply relative overflow-hidden transition-all duration-300
+           active:scale-95 active:shadow-inner;
+  }
+
+  .liquid-btn-primary {
+    @apply bg-gradient-to-b from-brand-400 to-brand-600 text-white
+           shadow-[inset_0_2px_1px_0_rgba(255,255,255,0.35),0_4px_12px_rgba(27,211,132,0.4)]
+           hover:shadow-[inset_0_2px_1px_0_rgba(255,255,255,0.5),0_6px_16px_rgba(27,211,132,0.5)];
+  }
+
+  .liquid-btn-secondary {
+    @apply bg-white/30 dark:bg-slate-700/30
+           text-slate-700 dark:text-white border border-white/30 dark:border-white/10
+           backdrop-blur-md
+           shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3)]
+           hover:bg-white/50 dark:hover:bg-slate-700/50 hover:shadow-[0_4px_10px_rgba(0,0,0,0.05)];
+  }
+
+  .liquid-input {
+    @apply bg-white/30 dark:bg-slate-900/30 backdrop-blur-md border border-white/20 dark:border-white/10
+           focus:bg-white/50 dark:focus:bg-slate-900/50 focus:shadow-[0_0_0_2px_rgba(27,211,132,0.3),inset_0_2px_4px_rgba(0,0,0,0.05)]
+           placeholder-slate-500/70 dark:placeholder-slate-400/70;
   }
 }
 
+/* --- Animated Background Blobs --- */
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f0f4f8;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.dark body {
+  background-color: #0f172a;
+}
+
+.blob-cont {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.7;
+  animation: float 20s infinite ease-in-out alternate;
+}
+
+.blob-1 {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: #b8fcdb;
+}
+.dark .blob-1 { background: #0d583d; opacity: 0.3; }
+
+.blob-2 {
+  bottom: -10%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: #e0f2fe;
+  animation-delay: -5s;
+}
+.dark .blob-2 { background: #1e293b; opacity: 0.3; }
+
+.blob-3 {
+  top: 40%;
+  left: 40%;
+  width: 40vw;
+  height: 40vw;
+  background: #ffedd5;
+  animation-delay: -10s;
+}
+.dark .blob-3 { background: #4c1d95; opacity: 0.2; }
+
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(50px, 50px) scale(1.1); }
+}
+
+/* --- Custom Scrollbar --- */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
 }
