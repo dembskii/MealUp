@@ -23,7 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const buildExerciseMap = (exercisesArr) => {
   const map = {};
   for (const ex of exercisesArr) {
-    map[ex._id] = ex;
+    map[ex._id || ex.id] = ex;
   }
   return map;
 };
@@ -295,8 +295,14 @@ export default function Workouts() {
   };
 
   const handleAddToPlanSchedule = (trainingId) => {
-    if (pickingForPlanDay === 'edit') {
-      setEditingPlan(prev => ({...prev, trainings: [...(prev.trainings || []), trainingId]}));
+    if (typeof pickingForPlanDay === 'string' && pickingForPlanDay.startsWith('edit-')) {
+      const day = parseInt(pickingForPlanDay.split('-')[1]);
+      setEditingPlan(prev => {
+        if (!prev) return prev;
+        const schedule = { ...prev.schedule };
+        schedule[day] = [...(schedule[day] || []), trainingId];
+        return { ...prev, schedule };
+      });
       setPickingForPlanDay(null);
     } else if (pickingForPlanDay !== null) {
       setNewPlan(prev => {
@@ -399,15 +405,27 @@ export default function Workouts() {
   };
 
   const handleStartEditPlan = (plan) => {
+    // Distribute flat trainings array into a day-based schedule
+    const schedule = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+    (plan.trainings || []).forEach(tid => {
+      const t = trainings.find(tr => tr._id === tid);
+      const day = t?.day || 1;
+      schedule[day] = [...(schedule[day] || []), tid];
+    });
     setEditingPlan({
       _id: plan._id,
       name: plan.name,
       description: plan.description || '',
-      trainings: plan.trainings || [],
+      schedule,
       is_public: plan.is_public,
     });
     setSelectedPlan(null);
   };
+
+  const editPlanTrainingIds = useMemo(() => {
+    if (!editingPlan?.schedule) return [];
+    return Object.values(editingPlan.schedule).flat();
+  }, [editingPlan?.schedule]);
 
   const handleSaveEditPlan = async () => {
     if (!editingPlan || !editingPlan.name) return;
@@ -416,7 +434,7 @@ export default function Workouts() {
       const payload = {
         name: editingPlan.name,
         description: editingPlan.description || null,
-        trainings: editingPlan.trainings,
+        trainings: editPlanTrainingIds,
         is_public: editingPlan.is_public,
       };
       const saved = await updateWorkoutPlan(editingPlan._id, payload);
@@ -945,12 +963,12 @@ export default function Workouts() {
       {/* ASSIGN TRAINING PICKER MODAL */}
       <AnimatePresence>
         {pickingForPlanDay !== null && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPickingForPlanDay(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPickingForPlanDay(null)} className="absolute inset-0 z-0 bg-slate-900/60 backdrop-blur-md" />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               className="w-full max-w-lg bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2rem] relative z-10 flex flex-col max-h-[70vh] shadow-2xl border border-white/40 overflow-hidden">
               <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
-                <div className="pl-2"><h3 className="font-bold text-lg text-slate-800 dark:text-white">{pickingForPlanDay === 'edit' ? 'Add Training to Plan' : `Assign Training — ${dayNames[pickingForPlanDay]}`}</h3></div>
+                <div className="pl-2"><h3 className="font-bold text-lg text-slate-800 dark:text-white">{typeof pickingForPlanDay === 'string' && pickingForPlanDay.startsWith('edit-') ? `Assign Training — ${dayNames[parseInt(pickingForPlanDay.split('-')[1])]}` : `Assign Training — ${dayNames[pickingForPlanDay]}`}</h3></div>
                 <button onClick={() => setPickingForPlanDay(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
@@ -1254,45 +1272,71 @@ export default function Workouts() {
                 </div>
                 <button onClick={() => setEditingPlan(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-              <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-brand-500/5 dark:bg-white/5 rounded-[2rem] border-2 border-dashed border-brand-500/10 backdrop-blur-sm">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Plan Name</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Hash className="w-4 h-4 text-brand-500" /> Plan Name</label>
                     <input type="text" value={editingPlan.name} onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                      className="w-full p-4 liquid-input rounded-2xl outline-none font-medium" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Description</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-2"><Type className="w-4 h-4 text-brand-500" /> Description</label>
                     <input type="text" value={editingPlan.description} onChange={e => setEditingPlan({...editingPlan, description: e.target.value})} placeholder="Optional"
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                      className="w-full p-4 liquid-input rounded-2xl outline-none font-medium" />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 px-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Public</label>
                   <button onClick={() => setEditingPlan({...editingPlan, is_public: !editingPlan.is_public})}
                     className={`w-12 h-6 rounded-full transition-all ${editingPlan.is_public ? 'bg-brand-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
                     <div className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${editingPlan.is_public ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
                   </button>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Trainings ({editingPlan.trainings?.length || 0})</label>
-                    <button onClick={() => setPickingForPlanDay('edit')} className="flex items-center gap-1.5 text-brand-600 dark:text-brand-400 font-bold text-xs bg-brand-500/10 px-3 py-1.5 rounded-lg hover:bg-brand-500/20 transition-all"><Plus className="w-3.5 h-3.5" /> Add</button>
-                  </div>
-                  {(editingPlan.trainings || []).map((tid, i) => {
-                    const t = trainings.find(tr => tr._id === tid);
-                    return (
-                      <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl border border-white/50 dark:border-white/10 flex justify-between items-center group">
-                        <div className="flex items-center gap-3">
-                          <Activity className="w-4 h-4 text-brand-500" />
-                          <span className="font-bold text-sm text-slate-800 dark:text-white">{t?.name || tid.slice(0, 8) + '...'}</span>
-                          {t && <span className="text-[10px] text-slate-400">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)}</span>}
+                <div className="space-y-4">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 px-1"><Calendar className="w-4 h-4 text-brand-500" /> Weekly Schedule</label>
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4, 5, 6, 7].map(day => {
+                      const dayTrainings = editingPlan.schedule?.[day] || [];
+                      return (
+                        <div key={day} className="p-4 bg-white/40 dark:bg-white/5 rounded-2xl border border-white/50 dark:border-white/10 backdrop-blur-sm">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                              <span className="w-7 h-7 rounded-lg bg-brand-500/10 text-brand-500 flex items-center justify-center text-[10px] font-black">{dayNames[day].slice(0, 2).toUpperCase()}</span>
+                              {dayNames[day]}
+                            </h4>
+                            <button onClick={() => setPickingForPlanDay(`edit-${day}`)} className="flex items-center gap-1.5 text-brand-600 dark:text-brand-400 font-bold text-xs bg-brand-500/10 px-3 py-1.5 rounded-lg hover:bg-brand-500/20 transition-all active:scale-95"><Plus className="w-3.5 h-3.5" /> Add</button>
+                          </div>
+                          {dayTrainings.length > 0 ? (
+                            <div className="space-y-2 mt-2">
+                              {dayTrainings.map((tid, idx) => {
+                                const t = trainings.find(tr => tr._id === tid);
+                                return t ? (
+                                  <motion.div key={`${day}-${idx}`} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                                    className="flex items-center justify-between p-3 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5 group">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-1.5 bg-brand-500/10 text-brand-500 rounded-lg"><Activity className="w-4 h-4" /></div>
+                                      <div>
+                                        <span className="font-bold text-sm text-slate-800 dark:text-white">{t.name}</span>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type} &bull; {formatDuration(t.est_time)}</p>
+                                      </div>
+                                    </div>
+                                    <button onClick={() => setEditingPlan(prev => {
+                                      if (!prev) return prev;
+                                      const schedule = { ...prev.schedule };
+                                      schedule[day] = schedule[day].filter((_, i) => i !== idx);
+                                      return { ...prev, schedule };
+                                    })} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  </motion.div>
+                                ) : null;
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-slate-400 italic mt-1 ml-9">Rest day</p>
+                          )}
                         </div>
-                        <button onClick={() => setEditingPlan(prev => ({...prev, trainings: prev.trainings.filter((_, idx) => idx !== i)}))}
-                          className="p-1.5 text-slate-300 hover:text-red-500 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
               <div className="p-6 bg-slate-50/80 dark:bg-black/20 backdrop-blur-md flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
