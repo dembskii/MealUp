@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { NavItem } from '../data/types';
 import {
-  LayoutDashboard, Utensils, Dumbbell, Users, Activity,
+  LayoutDashboard, Utensils, Dumbbell, Users,
   Settings, UserCircle, Moon, Sun, LogIn, LogOut, UserPlus,
   GraduationCap, Loader2
 } from 'lucide-react';
@@ -88,9 +88,7 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
     <div className="flex flex-col h-full bg-white/20 dark:bg-slate-900/20 backdrop-blur-sm transition-colors duration-300">
       {/* Logo */}
       <div className="p-8 flex items-center gap-3">
-        <div className="liquid-btn-primary p-2.5 rounded-xl shadow-lg shadow-brand-500/30">
-          <Activity className="text-white w-6 h-6" />
-        </div>
+        <img src="/images/logo.png" alt="MealUp" className="w-8 h-8 drop-shadow-lg" />
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight drop-shadow-sm">
           MealUp
         </h1>
