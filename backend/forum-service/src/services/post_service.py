@@ -4,7 +4,7 @@ from typing import Optional, List
 from uuid import UUID
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func
+from sqlalchemy import func, delete, update
 
 from src.models.post import Post
 from src.models.post_view import PostView
@@ -125,41 +125,40 @@ class PostService:
                 logger.warning(f"No post found with ID: {post_id} for deletion")
                 return False
 
-            # 1. Find all comment IDs for this post
-            comment_stmt = select(Comment.id).where(Comment.post_id == post_id)
-            comment_result = await session.exec(comment_stmt)
-            comment_ids = comment_result.all()
+            # 1. Get all comment IDs for this post
+            comment_ids_stmt = select(Comment.id).where(Comment.post_id == post_id)
+            comment_ids_result = await session.exec(comment_ids_stmt)
+            comment_ids = list(comment_ids_result.all())
 
-            # 2. Delete CommentLikes for those comments
             if comment_ids:
-                for cid in comment_ids:
-                    cl_stmt = select(CommentLike).where(CommentLike.comment_id == cid)
-                    cl_result = await session.exec(cl_stmt)
-                    for cl in cl_result.all():
-                        await session.delete(cl)
+                # 2. Delete CommentLikes for those comments (bulk)
+                await session.exec(
+                    delete(CommentLike).where(CommentLike.comment_id.in_(comment_ids))
+                )
 
-            # 3. Delete Comments
-            if comment_ids:
-                for cid in comment_ids:
-                    c_stmt = select(Comment).where(Comment.id == cid)
-                    c_result = await session.exec(c_stmt)
-                    comment = c_result.first()
-                    if comment:
-                        await session.delete(comment)
+                # 3. Nullify self-referencing parent_comment_id to break FK cycle
+                await session.exec(
+                    update(Comment)
+                    .where(Comment.post_id == post_id)
+                    .values(parent_comment_id=None)
+                )
 
-            # 4. Delete PostLikes
-            pl_stmt = select(PostLike).where(PostLike.post_id == post_id)
-            pl_result = await session.exec(pl_stmt)
-            for pl in pl_result.all():
-                await session.delete(pl)
+                # 4. Delete all comments for this post (bulk)
+                await session.exec(
+                    delete(Comment).where(Comment.post_id == post_id)
+                )
 
-            # 5. Delete PostViews
-            pv_stmt = select(PostView).where(PostView.post_id == post_id)
-            pv_result = await session.exec(pv_stmt)
-            for pv in pv_result.all():
-                await session.delete(pv)
+            # 5. Delete PostLikes (bulk)
+            await session.exec(
+                delete(PostLike).where(PostLike.post_id == post_id)
+            )
 
-            # 6. Delete the Post itself
+            # 6. Delete PostViews (bulk)
+            await session.exec(
+                delete(PostView).where(PostView.post_id == post_id)
+            )
+
+            # 7. Delete the Post itself
             await session.delete(post)
             await session.commit()
             logger.info(f"Deleted post with ID: {post_id} and all related records")
