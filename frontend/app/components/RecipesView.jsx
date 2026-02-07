@@ -49,13 +49,30 @@ export default function Recipes() {
     }
   };
 
+  const toGrams = (quantity, capacity) => {
+    switch (capacity) {
+      case 'kg': return quantity * 1000;
+      case 'ml': return quantity;
+      case 'l': return quantity * 1000;
+      case 'oz': return quantity * 28.35;
+      case 'lb': return quantity * 453.6;
+      case 'tsp': return quantity * 5;
+      case 'tbsp': return quantity * 15;
+      case 'cup': return quantity * 240;
+      case 'pcs': return quantity * 100;
+      default: return quantity;
+    }
+  };
+
   const calculateMacros = (recipe) => {
-    let calories = 0, protein = 0, carbs = 0, fat = 0;
+    let calories = 0, protein = 0, carbs = 0, fat = 0, totalWeight = 0;
     if (recipe.ingredients) {
       recipe.ingredients.forEach(item => {
         const ing = ingredientMap[item.ingredient_id];
+        const weightG = toGrams(item.quantity || 0, item.capacity);
+        totalWeight += weightG;
         if (ing?.macro_per_hundred) {
-          const factor = (item.quantity || 0) / 100;
+          const factor = weightG / 100;
           calories += (ing.macro_per_hundred.calories || 0) * factor;
           protein += (ing.macro_per_hundred.proteins || 0) * factor;
           carbs += (ing.macro_per_hundred.carbs || 0) * factor;
@@ -63,12 +80,11 @@ export default function Recipes() {
         }
       });
     }
-    return {
-      calories: Math.round(calories),
-      protein: Math.round(protein),
-      carbs: Math.round(carbs),
-      fat: Math.round(fat),
-    };
+    if (totalWeight > 0) {
+      const norm = 100 / totalWeight;
+      return { calories: Math.round(calories * norm), protein: Math.round(protein * norm), carbs: Math.round(carbs * norm), fat: Math.round(fat * norm) };
+    }
+    return { calories: 0, protein: 0, carbs: 0, fat: 0 };
   };
 
   const formatTime = (seconds) => {
@@ -240,12 +256,12 @@ export default function Recipes() {
                     </div>
                     <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400 mb-6">
                       <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatTime(recipe.time_to_prepare)}</span></div>
-                      <div className="flex items-center gap-1"><Flame className="w-4 h-4 text-orange-500" /><span>{macros.calories} kcal</span></div>
+                      <div className="flex items-center gap-1"><Flame className="w-4 h-4 text-orange-500" /><span>{macros.calories} kcal/100g</span></div>
                     </div>
                     <div className="mt-auto grid grid-cols-3 gap-2 py-4 border-t border-slate-100 dark:border-white/10 bg-white/30 dark:bg-black/20 -mx-6 px-6 -mb-6 backdrop-blur-sm">
-                      <div className="text-center"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Protein</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.protein}g</p></div>
-                      <div className="text-center border-l border-slate-200 dark:border-white/10"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Carbs</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.carbs}g</p></div>
-                      <div className="text-center border-l border-slate-200 dark:border-white/10"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Fat</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.fat}g</p></div>
+                      <div className="text-center"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Protein/100g</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.protein}g</p></div>
+                      <div className="text-center border-l border-slate-200 dark:border-white/10"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Carbs/100g</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.carbs}g</p></div>
+                      <div className="text-center border-l border-slate-200 dark:border-white/10"><p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Fat/100g</p><p className="font-bold text-slate-700 dark:text-slate-200">{macros.fat}g</p></div>
                     </div>
                   </div>
                 </motion.div>
@@ -277,9 +293,6 @@ export default function Recipes() {
                     onError={(e) => { e.target.src = 'https://picsum.photos/800/500?grayscale'; }} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   <div className="absolute top-6 right-6 flex gap-2">
-                    <button onClick={(e) => handleDelete(e, selectedRecipe._id)} className="p-2 bg-black/20 hover:bg-red-500/80 text-white rounded-full transition-colors backdrop-blur-md border border-white/10" title="Delete recipe">
-                      <X className="w-5 h-5" />
-                    </button>
                     <button onClick={() => setSelectedRecipe(null)} className="p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors backdrop-blur-md border border-white/10">
                       <X className="w-6 h-6" />
                     </button>
@@ -304,7 +317,7 @@ export default function Recipes() {
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-8 space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="flex gap-4 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 items-center justify-around">
-                        <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Calories</p>
+                        <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Cal/100g</p>
                           <div className="flex items-center gap-1.5 justify-center"><div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-full text-orange-500"><Flame className="w-4 h-4" /></div><span className="text-lg font-bold text-slate-800 dark:text-white">{macros.calories}</span></div>
                         </div>
                         <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
@@ -320,9 +333,9 @@ export default function Recipes() {
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-500/10 text-center"><p className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase mb-1">Protein</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.protein}g</p></div>
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-500/10 text-center"><p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">Carbs</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.carbs}g</p></div>
-                        <div className="p-3 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-500/10 text-center"><p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase mb-1">Fat</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.fat}g</p></div>
+                        <div className="p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-500/10 text-center"><p className="text-[10px] text-green-600 dark:text-green-400 font-bold uppercase mb-1">Protein/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.protein}g</p></div>
+                        <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-500/10 text-center"><p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase mb-1">Carbs/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.carbs}g</p></div>
+                        <div className="p-3 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-500/10 text-center"><p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold uppercase mb-1">Fat/100g</p><p className="text-xl font-bold text-slate-800 dark:text-white">{macros.fat}g</p></div>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
