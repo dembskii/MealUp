@@ -11,7 +11,7 @@ export const API_ENDPOINT_URL = `${GATEWAY_URL}/${API_PREFIX}/${API_VERSION}`;
 // Service endpoints
 export const ENDPOINTS = {
   AUTH: `${API_ENDPOINT_URL}/auth`,
-  USERS: `${API_ENDPOINT_URL}/users`,
+  USERS: `${API_ENDPOINT_URL}/user`,
   RECIPES: `${API_ENDPOINT_URL}/recipes`,
 };
 
