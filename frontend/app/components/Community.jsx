@@ -1,675 +1,1189 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { TrainingType, DayOfWeek, SetUnit } from '../data/types';
-import { MOCK_EXERCISES_DB } from '../data/mockData';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Heart, MessageCircle, Share2, MoreHorizontal, Award,
-  Search, Filter, Flame, Clock, ChefHat, X,
-  ChevronDown, ChevronUp, Eye, TrendingUp, Send, Dumbbell, Link, Plus, Calendar, Check, Hash
+  Heart, MessageCircle, Share2, MoreHorizontal,
+  Search, Flame, Clock, X,
+  Eye, TrendingUp, Send, Plus, Hash, Loader2,
+  Pencil, Trash2, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as forumAPI from '../services/forumService';
+import { batchGetDisplayNames } from '../services/userService';
 
-// --- MOCK DATA GENERATION ---
-
-const generateMockComments = (count, depth = 0) => {
-  if (depth > 2) return [];
-  return Array.from({ length: count }).map((_, i) => ({
-    id: `c-${depth}-${i}-${Math.random()}`,
-    user: {
-      name: ['Alice', 'Bob', 'Charlie', 'Dana'][Math.floor(Math.random() * 4)],
-      avatar: `https://i.pravatar.cc/150?u=${Math.random()}`,
-      badge: Math.random() > 0.8 ? 'Pro' : undefined
-    },
-    content: [
-      'This looks amazing! 🔥',
-      'Can I substitute the chicken?',
-      'Tried this yesterday, solid workout.',
-      'Thanks for sharing!'
-    ][Math.floor(Math.random() * 4)],
-    timestamp: new Date(Date.now() - Math.random() * 10000000),
-    likes: Math.floor(Math.random() * 20),
-    replies: Math.random() > 0.7 ? generateMockComments(1, depth + 1) : []
-  }));
-};
-
-const AVAILABLE_RECIPES = [
-  { type: 'recipe', id: 'r1', title: 'Super Green Quinoa Salad', subtitle: '450 kcal • 15 min', image: 'https://picsum.photos/100/100?random=11' },
-  { type: 'recipe', id: 'r2', title: 'Grilled Lemon Herb Salmon', subtitle: '380 kcal • 25 min', image: 'https://picsum.photos/100/100?random=2' },
-  { type: 'recipe', id: 'r3', title: 'Berry Blast Smoothie', subtitle: '220 kcal • 5 min', image: 'https://picsum.photos/100/100?random=3' },
-  { type: 'recipe', id: 'r4', title: 'Avocado Toast & Eggs', subtitle: '320 kcal • 10 min', image: 'https://picsum.photos/100/100?random=4' },
-  { type: 'recipe', id: 'r5', title: 'Protein Pancakes', subtitle: '400 kcal • 20 min', image: 'https://picsum.photos/100/100?random=5' },
-];
-
-const AVAILABLE_WORKOUTS = [
-  { type: 'workout', id: 'w1', title: '10k Runner Prep', subtitle: 'Advanced • 60 min', image: 'https://picsum.photos/100/100?random=99' },
-  { type: 'workout', id: 'w2', title: 'Full Body HIIT', subtitle: 'Intermediate • 45 min', image: 'https://picsum.photos/100/100?random=98' },
-  { type: 'workout', id: 'w3', title: 'Morning Yoga', subtitle: 'Beginner • 20 min', image: 'https://picsum.photos/100/100?random=97' },
-  { type: 'workout', id: 'w4', title: 'Upper Body Power', subtitle: 'Advanced • 50 min', image: 'https://picsum.photos/100/100?random=96' },
-  { type: 'workout', id: 'w5', title: 'Core Crusher', subtitle: 'Intermediate • 15 min', image: 'https://picsum.photos/100/100?random=95' },
-];
-
-const SUGGESTED_TAGS = ['fitness', 'nutrition', 'recipe', 'workout', 'motivation', 'healthy', 'beginner', 'gains', 'weightloss', 'cardio'];
-
-const mockPopulatedTraining = (id, name, type) => ({
-  _id: id,
-  name: name,
-  day: DayOfWeek.MONDAY,
-  training_type: type,
-  est_time: 3600,
-  exercises: [
-    {
-      exercise_id: 'ex_burpee',
-      rest_between_sets: 60,
-      sets: [{ volume: 10, units: SetUnit.REPS }],
-      _exerciseDetails: MOCK_EXERCISES_DB['ex_burpee']
-    },
-    {
-      exercise_id: 'ex_pushup',
-      rest_between_sets: 60,
-      sets: [{ volume: 15, units: SetUnit.REPS }],
-      _exerciseDetails: MOCK_EXERCISES_DB['ex_pushup']
-    }
-  ]
-});
-
-const INITIAL_POSTS = [
-  {
-    id: '1',
-    user: { name: 'Sarah Jenkins', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026704d', badge: 'Trainer' },
-    content: 'Just finished my first 10k run! The new training plan from AI Trainer really helped me pace myself. Feeling amazing! 🏃‍♀️💨',
-    image: 'https://picsum.photos/600/300?random=10',
-    likes: 124,
-    commentsCount: 18,
-    views: 1250,
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-    tags: ['running', 'milestone', 'cardio'],
-    comments: generateMockComments(3),
-    linkedContent: {
-      type: 'workout', id: 'w1', title: '10k Runner Prep',
-      subtitle: 'Advanced • 60 min', image: 'https://picsum.photos/100/100?random=99',
-      payload: mockPopulatedTraining('w1', '10k Runner Prep', TrainingType.CARDIO)
-    }
-  },
-  {
-    id: '2',
-    user: { name: 'Mike Ross', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026024d' },
-    content: 'Meal prep Sunday! Try this high protein salad I just made. It keeps me full for hours. 🥗',
-    likes: 89, commentsCount: 12, views: 890,
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5),
-    tags: ['mealprep', 'healthy', 'recipe'],
-    comments: generateMockComments(2),
-    linkedContent: {
-      type: 'recipe', id: 'r1', title: 'Super Green Quinoa Salad',
-      subtitle: '450 kcal • 15 min', image: 'https://picsum.photos/100/100?random=11',
-      payload: {
-        id: 'r1', title: 'Super Green Quinoa Salad',
-        description: 'A refreshing and nutrient-dense salad perfect for post-workout recovery. Packed with plant-based protein and healthy fats from avocado and seeds.',
-        calories: 450, protein: 18, carbs: 45, fat: 22, prepTime: '15 min',
-        tags: ['Vegetarian', 'Gluten-Free', 'High Protein', 'Lunch'],
-        ingredients: ['1 cup cooked Quinoa', '2 cups fresh Spinach', '1/2 Avocado, sliced', '1/4 cup Cherry Tomatoes', '2 tbsp Olive Oil & Lemon dressing', '1 tbsp Pumpkin Seeds'],
-        instructions: ['Rinse quinoa and cook according to package instructions.', 'While quinoa cools, chop the vegetables.', 'In a large bowl, toss spinach, cooled quinoa, and tomatoes.', 'Top with sliced avocado and drizzle with dressing.', 'Sprinkle pumpkin seeds on top for crunch.', 'Season with salt and pepper to taste.'],
-        imageUrl: 'https://picsum.photos/600/400?random=11'
-      }
-    }
-  },
-  {
-    id: '3',
-    user: { name: 'Elena Rodriguez', avatar: 'https://i.pravatar.cc/150?u=a042581f4e29026703d', badge: 'Pro' },
-    content: 'Hit a new PR on deadlifts today! 100kg! Hard work pays off.',
-    likes: 243, commentsCount: 45, views: 3400,
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    tags: ['gym', 'pr', 'strength'],
-    comments: generateMockComments(5)
-  },
-  {
-    id: '4',
-    user: { name: 'Tom Hardy', avatar: 'https://i.pravatar.cc/150?u=tom', badge: 'Chef' },
-    content: 'Does anyone have a good substitute for whey protein in baking? I want to make these brownies but keep them dairy free.',
-    likes: 15, commentsCount: 8, views: 120,
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    tags: ['question', 'baking', 'nutrition'],
-    comments: generateMockComments(1)
-  }
-];
-
-// --- UTILITIES ---
-
-const calculateTrendingScore = (post) => {
-  const hoursSincePost = (Date.now() - post.timestamp.getTime()) / (1000 * 60 * 60);
-  const gravity = 1.8;
-  const engagementScore = (post.likes * 2) + (post.commentsCount * 3) + (post.views * 0.1);
-  return engagementScore / Math.pow(hoursSincePost + 2, gravity);
-};
+// ======================== UTILITIES ========================
 
 const formatNumber = (num) => {
   if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
   return num.toString();
 };
 
-const timeAgo = (date) => {
-  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + "y ago";
-  interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + "mo ago";
-  interval = seconds / 86400;
-  if (interval > 1) return Math.floor(interval) + "d ago";
-  interval = seconds / 3600;
-  if (interval > 1) return Math.floor(interval) + "h ago";
-  interval = seconds / 60;
-  if (interval > 1) return Math.floor(interval) + "m ago";
-  return "Just now";
+const timeAgo = (dateStr) => {
+  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 };
 
-// --- SUB-COMPONENTS ---
+// Map API PostResponse to internal shape
+const mapPost = (p) => ({
+  id: p._id,
+  author_id: p.author_id,
+  title: p.title,
+  content: p.content,
+  tags: p.tags || [],
+  images: p.images || [],
+  likes: p.total_likes ?? 0,
+  views: p.views_count ?? 0,
+  commentCount: 0,
+  timestamp: p._created_at,
+  updatedAt: p._updated_at,
+});
 
-function CommentNode({ comment, onReply }) {
-  const [isReplying, setIsReplying] = useState(false);
-  const [replyText, setReplyText] = useState('');
+// Collect all comment IDs from a tree
+function collectCommentIds(tree) {
+  const ids = [];
+  function walk(nodes) {
+    for (const node of nodes) {
+      const data = node.comment || node;
+      ids.push(data._id || data.id);
+      if (node.replies?.length) walk(node.replies);
+    }
+  }
+  walk(tree);
+  return ids;
+}
+
+// Count all comments in a tree recursively
+function countTreeComments(tree) {
+  let count = 0;
+  function walk(nodes) {
+    for (const node of nodes) {
+      count++;
+      if (node.replies?.length) walk(node.replies);
+    }
+  }
+  walk(tree);
+  return count;
+}
+
+// ======================== HOOKS ========================
+
+function useInfiniteScroll(callback, hasMore, loading) {
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    if (!hasMore || loading) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) callback();
+      },
+      { rootMargin: '400px' }
+    );
+    const el = sentinelRef.current;
+    if (el) observer.observe(el);
+    return () => { if (el) observer.unobserve(el); };
+  }, [callback, hasMore, loading]);
+
+  return sentinelRef;
+}
+
+// Simple virtualization hook
+function useVirtualList(items, estimatedHeight = 320, overscan = 3) {
+  const containerRef = useRef(null);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onScroll = () => {
+      const scrollTop = window.scrollY - (container.offsetTop || 0);
+      const viewportHeight = window.innerHeight;
+
+      const startIdx = Math.max(0, Math.floor(scrollTop / estimatedHeight) - overscan);
+      const endIdx = Math.min(
+        items.length,
+        Math.ceil((scrollTop + viewportHeight) / estimatedHeight) + overscan
+      );
+      setVisibleRange({ start: startIdx, end: endIdx });
+    };
+
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [items.length, estimatedHeight, overscan]);
+
+  const totalHeight = items.length * estimatedHeight;
+  const offsetY = visibleRange.start * estimatedHeight;
+  const visibleItems = items.slice(visibleRange.start, visibleRange.end);
+
+  return { containerRef, totalHeight, offsetY, visibleItems, visibleRange };
+}
+
+// ======================== DELETE CONFIRMATION POPUP ========================
+
+function ConfirmDeleteModal({ title, message, onConfirm, onCancel }) {
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   return (
-    <div className="flex gap-3 mt-4">
-      <img src={comment.user.avatar} alt={comment.user.name} className="w-8 h-8 rounded-full object-cover border border-white/50" />
-      <div className="flex-1">
-        <div className="bg-white/40 dark:bg-white/5 rounded-2xl px-4 py-2 inline-block min-w-[200px]">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold text-sm text-slate-800 dark:text-white">{comment.user.name}</span>
-            {comment.user.badge && (
-              <span className="text-[10px] bg-brand-500/20 text-brand-600 dark:text-brand-400 px-1.5 rounded font-bold border border-brand-500/30">{comment.user.badge}</span>
-            )}
-            <span className="text-xs text-slate-400">{timeAgo(comment.timestamp)}</span>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onCancel}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-white/20"
+      >
+        <div className="p-6 text-center">
+          <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-7 h-7 text-red-500" />
           </div>
-          <p className="text-sm text-slate-700 dark:text-slate-300">{comment.content}</p>
+          <h3 className="font-bold text-lg text-slate-800 dark:text-white mb-2">{title}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{message}</p>
+        </div>
+        <div className="flex border-t border-slate-200 dark:border-white/10">
+          <button onClick={onCancel}
+            className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-3 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border-l border-slate-200 dark:border-white/10">
+            Delete
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ======================== COMMENT NODE ========================
+
+function CommentNode({ comment, onReply, onDeleteComment, onEditComment, currentUserId, likedCommentIds, depth = 0 }) {
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const data = comment.comment || comment;
+  const replies = comment.replies || [];
+
+  const commentId = data._id || data.id;
+  const [liked, setLiked] = useState(likedCommentIds.has(commentId));
+  const [likeCount, setLikeCount] = useState(data.total_likes ?? 0);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(data.content);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const isOwner = currentUserId && (data.user_id === currentUserId || data.author_id === currentUserId);
+
+  const handleLike = async () => {
+    try {
+      if (liked) {
+        await forumAPI.unlikeComment(commentId);
+        setLikeCount((c) => c - 1);
+      } else {
+        await forumAPI.likeComment(commentId);
+        setLikeCount((c) => c + 1);
+      }
+      setLiked(!liked);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleReply = async () => {
+    if (!replyText.trim()) return;
+    await onReply(commentId, replyText);
+    setReplyText('');
+    setIsReplying(false);
+  };
+
+  const handleEdit = async () => {
+    if (!editText.trim() || editText === data.content) {
+      setIsEditing(false);
+      return;
+    }
+    try {
+      await onEditComment(commentId, editText);
+      setIsEditing(false);
+    } catch (e) {
+      console.error('Failed to edit comment:', e);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await onDeleteComment(commentId);
+    } catch (e) {
+      console.error('Failed to delete comment:', e);
+    }
+    setConfirmDelete(false);
+  };
+
+  return (
+    <div className={`flex gap-3 ${depth > 0 ? 'mt-3' : 'mt-4'}`}>
+      <div className="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xs shrink-0">
+        {(data.user_id || data.author_id || '?').slice(-2).toUpperCase()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="bg-white/40 dark:bg-white/5 rounded-2xl px-4 py-2 inline-block min-w-[200px] relative group">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-bold text-sm text-slate-800 dark:text-white truncate">
+              {(data.user_id || data.author_id)?.slice(0, 12) || 'User'}
+            </span>
+            <span className="text-xs text-slate-400">{timeAgo(data._created_at || data.created_at)}</span>
+            {isOwner && (
+              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => {
+                    setIsEditing(true);
+                    setEditText(data.content);
+                  }}
+                  className="p-1 hover:bg-white/20 rounded transition-colors"
+                  title="Edit"
+                >
+                  <Pencil className="w-3 h-3 text-slate-400 hover:text-brand-500" />
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="p-1 hover:bg-white/20 rounded transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3 h-3 text-slate-400 hover:text-red-500" />
+                </button>
+              </div>
+            )}
+          </div>
+          {isEditing ? (
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                autoFocus
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleEdit();
+                  if (e.key === 'Escape') setIsEditing(false);
+                }}
+                className="flex-1 bg-white/50 dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+              <button onClick={handleEdit} className="text-xs font-bold text-brand-500 hover:text-brand-600">
+                Save
+              </button>
+              <button onClick={() => setIsEditing(false)} className="text-xs font-bold text-slate-400 hover:text-slate-600">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-700 dark:text-slate-300 break-words">{data.content}</p>
+          )}
         </div>
         <div className="flex items-center gap-4 mt-1 ml-2 text-xs font-semibold text-slate-500">
-          <button className="hover:text-brand-500">Like ({comment.likes})</button>
-          <button onClick={() => setIsReplying(!isReplying)} className="hover:text-brand-500">Reply</button>
+          <button onClick={handleLike} className={`hover:text-rose-500 flex items-center gap-1 ${liked ? 'text-rose-500' : ''}`}>
+            <Heart className={`w-3 h-3 ${liked ? 'fill-current' : ''}`} />
+            {likeCount}
+          </button>
+          {depth < 2 && (
+            <button onClick={() => setIsReplying(!isReplying)} className="hover:text-brand-500">
+              Reply
+            </button>
+          )}
         </div>
         {isReplying && (
-          <div className="mt-2 flex gap-2 animate-in fade-in slide-in-from-top-1">
-            <input type="text" autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)}
-              placeholder={`Reply to ${comment.user.name}...`}
-              className="flex-1 bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-            <button onClick={() => { onReply(comment.id, replyText); setIsReplying(false); setReplyText(''); }}
-              className="p-1.5 bg-brand-500 text-white rounded-lg"><Send className="w-4 h-4" /></button>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              autoFocus
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleReply()}
+              placeholder="Write a reply..."
+              className="flex-1 bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+            <button onClick={handleReply} className="p-1.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors">
+              <Send className="w-4 h-4" />
+            </button>
           </div>
         )}
-        {comment.replies.length > 0 && (
+        {replies.length > 0 && (
           <div className="pl-4 border-l-2 border-slate-200/50 dark:border-white/5 mt-2">
-            {comment.replies.map(reply => (
-              <CommentNode key={reply.id} comment={reply} onReply={onReply} />
+            {replies.map((reply) => (
+              <CommentNode
+                key={reply.comment?._id || reply._id}
+                comment={reply}
+                onReply={onReply}
+                onDeleteComment={onDeleteComment}
+                onEditComment={onEditComment}
+                currentUserId={currentUserId}
+                likedCommentIds={likedCommentIds}
+                depth={depth + 1}
+              />
             ))}
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <ConfirmDeleteModal
+            title="Delete Comment"
+            message="Are you sure you want to delete this comment? This action cannot be undone."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDelete(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function LinkedContentCard({ content, onClick }) {
-  return (
-    <div onClick={onClick}
-      className={`mt-3 flex items-center gap-4 p-3 rounded-2xl bg-gradient-to-br from-white/60 to-white/30 dark:from-slate-800/60 dark:to-slate-900/30 border border-white/50 dark:border-white/10 group shadow-sm ${onClick ? 'cursor-pointer hover:scale-[1.01] transition-transform' : ''}`}>
-      <div className="relative w-16 h-16 shrink-0">
-        <img src={content.image || `https://picsum.photos/100?random=${content.id}`} alt={content.title} className="w-full h-full object-cover rounded-xl shadow-md" />
-        <div className="absolute -top-2 -left-2 p-1.5 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-brand-500">
-          {content.type === 'recipe' ? <ChefHat className="w-3 h-3" /> : <Dumbbell className="w-3 h-3" />}
-        </div>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider mb-0.5">{content.type}</p>
-        <h4 className="font-bold text-slate-800 dark:text-white truncate group-hover:text-brand-500 transition-colors">{content.title}</h4>
-        <p className="text-xs text-slate-500 dark:text-slate-400">{content.subtitle}</p>
-      </div>
-      {onClick && (
-        <div className="mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <ChevronDown className="-rotate-90 w-5 h-5 text-slate-400" />
-        </div>
-      )}
-    </div>
-  );
-}
+// ======================== COMMENT MODAL (Facebook-style) ========================
 
-export function PostCard({ post, onLike, onContentClick }) {
-  const [showComments, setShowComments] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [comments, setComments] = useState(post.comments || []);
+function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [likedCommentIds, setLikedCommentIds] = useState(new Set());
 
-  const handleAddComment = () => {
-    if (!newComment.trim()) return;
-    const comment = {
-      id: Math.random().toString(),
-      user: { name: 'You', avatar: 'https://i.pravatar.cc/150?u=me' },
-      content: newComment,
-      timestamp: new Date(),
-      likes: 0,
-      replies: []
-    };
-    setComments([comment, ...comments]);
-    setNewComment('');
-  };
-
-  const handleReply = (parentId, text) => {
-    const addReply = (nodes) => {
-      return nodes.map(node => {
-        if (node.id === parentId) {
-          return {
-            ...node,
-            replies: [...node.replies, {
-              id: Math.random().toString(),
-              user: { name: 'You', avatar: 'https://i.pravatar.cc/150?u=me' },
-              content: text, timestamp: new Date(), likes: 0, replies: []
-            }]
-          };
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    forumAPI
+      .getCommentsTree(post.id)
+      .then(async (data) => {
+        if (cancelled) return;
+        setComments(data);
+        // Check liked status for all comments
+        const allIds = collectCommentIds(data);
+        if (allIds.length > 0) {
+          try {
+            const result = await forumAPI.checkCommentsLiked(allIds);
+            if (!cancelled) {
+              setLikedCommentIds(new Set(result.liked_comment_ids || []));
+            }
+          } catch {
+            /* ignore */
+          }
         }
-        return { ...node, replies: addReply(node.replies) };
+        // Update comment count
+        if (onCommentCountChange) {
+          onCommentCountChange(post.id, countTreeComments(data));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setComments([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
     };
-    setComments(addReply(comments));
+  }, [post.id]);
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const created = await forumAPI.createComment(post.id, { content: newComment });
+      setComments((prev) => {
+        const updated = [{ comment: created, replies: [] }, ...prev];
+        if (onCommentCountChange) onCommentCountChange(post.id, countTreeComments(updated));
+        return updated;
+      });
+      setNewComment('');
+    } catch (e) {
+      console.error('Failed to create comment:', e);
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const handleReply = async (parentCommentId, text) => {
+    try {
+      const created = await forumAPI.createComment(post.id, {
+        content: text,
+        parent_comment_id: parentCommentId,
+      });
+      const addReply = (nodes) =>
+        nodes.map((node) => {
+          const nodeId = node.comment?._id || node._id;
+          if (nodeId === parentCommentId) {
+            return { ...node, replies: [...(node.replies || []), { comment: created, replies: [] }] };
+          }
+          return { ...node, replies: addReply(node.replies || []) };
+        });
+      setComments((prev) => {
+        const updated = addReply(prev);
+        if (onCommentCountChange) onCommentCountChange(post.id, countTreeComments(updated));
+        return updated;
+      });
+    } catch (e) {
+      console.error('Failed to reply:', e);
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    try {
+      await forumAPI.deleteComment(commentId);
+      const removeFromTree = (nodes) =>
+        nodes.filter((node) => {
+          const nodeId = node.comment?._id || node._id;
+          if (nodeId === commentId) return false;
+          node.replies = removeFromTree(node.replies || []);
+          return true;
+        });
+      setComments((prev) => {
+        const updated = removeFromTree(prev);
+        if (onCommentCountChange) onCommentCountChange(post.id, countTreeComments(updated));
+        return updated;
+      });
+    } catch (e) {
+      console.error('Failed to delete comment:', e);
+    }
+  };
+
+  const handleEditComment = async (commentId, newContent) => {
+    const updated = await forumAPI.updateComment(commentId, { content: newContent });
+    const updateInTree = (nodes) =>
+      nodes.map((node) => {
+        const nodeId = node.comment?._id || node._id;
+        if (nodeId === commentId) {
+          const updatedComment = node.comment
+            ? { ...node.comment, content: updated.content || newContent }
+            : { ...node, content: updated.content || newContent };
+          return { ...node, comment: updatedComment };
+        }
+        return { ...node, replies: updateInTree(node.replies || []) };
+      });
+    setComments(updateInTree(comments));
+  };
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  const totalComments = countTreeComments(comments);
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-      className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl">
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <img src={post.user.avatar} alt={post.user.name} className="w-12 h-12 rounded-full object-cover border-2 border-white/80 shadow-md" />
-            {post.user.badge && (
-              <div className="absolute -bottom-1 -right-1 bg-brand-500 text-white text-[10px] px-1.5 py-0.5 rounded-md font-bold border border-white flex items-center gap-0.5 shadow-sm">
-                <Award className="w-2 h-2" />{post.user.badge}
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-white/20"
+      >
+        {/* Post context header */}
+        <div className="p-5 border-b border-slate-200/50 dark:border-white/10 bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+          <div className="flex justify-between items-start">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-sm shrink-0">
+                {(post.author_id || '?').slice(-2).toUpperCase()}
               </div>
-            )}
+              <div className="min-w-0">
+                <h3 className="font-bold text-slate-800 dark:text-white truncate">{post.title || 'Post'}</h3>
+                <span className="text-xs text-slate-400">{timeAgo(post.timestamp)}</span>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
           </div>
-          <div>
-            <h3 className="font-bold text-slate-800 dark:text-white drop-shadow-sm">{post.user.name}</h3>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>{timeAgo(post.timestamp)}</span><span>•</span>
-              <span className="flex items-center gap-0.5"><Eye className="w-3 h-3" /> {formatNumber(post.views)}</span>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300 line-clamp-3">{post.content}</p>
+          {post.tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {post.tags.map((tag) => (
+                <span key={tag} className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-md">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Comments count */}
+        <div className="px-5 pt-3 pb-1 text-xs font-bold text-slate-400 border-b border-slate-100 dark:border-white/5">
+          {loading ? 'Loading...' : `${totalComments} comment${totalComments !== 1 ? 's' : ''}`}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-[200px]">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
+              <span className="ml-2 text-sm text-slate-400">Loading comments...</span>
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="text-center py-12">
+              <MessageCircle className="w-10 h-10 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm text-slate-400">No comments yet. Be the first!</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {comments.map((c) => (
+                <CommentNode
+                  key={c.comment?._id || c._id}
+                  comment={c}
+                  onReply={handleReply}
+                  onDeleteComment={handleDeleteComment}
+                  onEditComment={handleEditComment}
+                  currentUserId={currentUserId}
+                  likedCommentIds={likedCommentIds}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* New comment input */}
+        <div className="p-4 border-t border-slate-200/50 dark:border-white/10 bg-slate-50/50 dark:bg-black/20">
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
+              {currentUserId ? currentUserId.slice(-2).toUpperCase() : 'Y'}
+            </div>
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                placeholder="Write a comment..."
+                disabled={submitting}
+                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl pl-4 pr-12 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 shadow-sm disabled:opacity-50"
+              />
+              <button
+                onClick={handleAddComment}
+                disabled={submitting || !newComment.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-brand-500 text-white rounded-xl hover:scale-105 transition-transform disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              </button>
             </div>
           </div>
         </div>
-        <button className="text-slate-300 hover:text-slate-500 transition-colors"><MoreHorizontal className="w-5 h-5" /></button>
+      </motion.div>
+    </div>
+  );
+}
+
+// ======================== POST CARD ========================
+
+function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, onEdit, onDelete, viewedPostIdsRef, authorName }) {
+  const [localLiked, setLocalLiked] = useState(isLiked);
+  const [likeCount, setLikeCount] = useState(post.likes);
+  const cardRef = useRef(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const menuRef = useRef(null);
+
+  const isOwner = currentUserId && post.author_id === currentUserId;
+
+  // Sync isLiked prop to local state when it changes (after API check)
+  useEffect(() => {
+    setLocalLiked(isLiked);
+  }, [isLiked]);
+
+  // Track view when post enters viewport (using parent-level Set to survive virtualization)
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !viewedPostIdsRef?.current) return;
+    if (viewedPostIdsRef.current.has(post.id)) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !viewedPostIdsRef.current.has(post.id)) {
+          viewedPostIdsRef.current.add(post.id);
+          forumAPI.trackPostView(post.id).catch(() => {});
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.unobserve(el);
+  }, [post.id]);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu]);
+
+  const handleLike = async () => {
+    try {
+      if (localLiked) {
+        await forumAPI.unlikePost(post.id);
+        setLikeCount((c) => c - 1);
+      } else {
+        await forumAPI.likePost(post.id);
+        setLikeCount((c) => c + 1);
+      }
+      const newState = !localLiked;
+      setLocalLiked(newState);
+      if (onLikeChange) onLikeChange(post.id, newState);
+    } catch (e) {
+      console.error('Like failed:', e);
+    }
+  };
+
+  const handleDelete = async () => {
+    setConfirmDelete(false);
+    setShowMenu(false);
+    if (onDelete) onDelete(post.id);
+  };
+
+  return (
+    <div ref={cardRef} className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl mb-6">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold border-2 border-white/80 shadow-md">
+            {(authorName || post.author_id || '?').slice(0, 2).toUpperCase()}
+          </div>
+          <div>
+            <span className="font-semibold text-slate-800 dark:text-white drop-shadow-sm">
+              {authorName || post.author_id?.slice(0, 12) || 'User'}
+            </span>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{timeAgo(post.timestamp)}</span>
+              <span>&bull;</span>
+              <span className="flex items-center gap-0.5">
+                <Eye className="w-3 h-3" /> {formatNumber(post.views)}
+              </span>
+            </div>
+          </div>
+        </div>
+        {isOwner && (
+          <div className="relative" ref={menuRef}>
+            <button onClick={() => setShowMenu(!showMenu)} className="text-slate-300 hover:text-slate-500 transition-colors p-1">
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
+            {showMenu && (
+              <div className="absolute right-0 top-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 min-w-[140px] overflow-hidden">
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onEdit(post);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2"
+                >
+                  <Pencil className="w-4 h-4" /> Edit
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setConfirmDelete(true);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <p className="text-slate-600 dark:text-slate-300 mb-4 leading-relaxed whitespace-pre-line">
-        {post.content.split(' ').map((word, i) =>
-          word.startsWith('#') ? <span key={i} className="text-brand-500 font-medium cursor-pointer hover:underline">{word} </span> : word + ' '
-        )}
-      </p>
+      {/* Title */}
+      {post.title && (
+        <h3 className="font-bold text-lg text-slate-800 dark:text-white mb-2">{post.title}</h3>
+      )}
 
+      {/* Content */}
+      <p className="text-slate-600 dark:text-slate-300 mb-4 leading-relaxed whitespace-pre-line">{post.content}</p>
+
+      {/* Tags */}
       {post.tags.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
-          {post.tags.map(tag => (
-            <span key={tag} className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-md border border-slate-200 dark:border-white/5">
+          {post.tags.map((tag) => (
+            <span
+              key={tag}
+              className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-md border border-slate-200 dark:border-white/5"
+            >
               #{tag}
             </span>
           ))}
         </div>
       )}
 
-      {post.image && !post.linkedContent && (
+      {/* Images */}
+      {post.images?.length > 0 && (
         <div className="rounded-2xl overflow-hidden mb-4 border border-white/20 shadow-md">
-          <img src={post.image} alt="Post content" className="w-full h-auto object-cover" />
+          <img src={post.images[0]} alt="Post" className="w-full h-auto object-cover max-h-[400px]" />
         </div>
       )}
 
-      {post.linkedContent && (
-        <LinkedContentCard content={post.linkedContent} onClick={() => onContentClick && onContentClick(post.linkedContent)} />
-      )}
-
+      {/* Actions */}
       <div className="flex items-center gap-6 pt-4 mt-4 border-t border-slate-200/50 dark:border-white/10">
-        <button onClick={() => { onLike(post.id); setIsLiked(!isLiked); }}
-          className={`flex items-center gap-2 transition-colors group ${isLiked ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}`}>
-          <div className={`p-2 rounded-full transition-colors ${isLiked ? 'bg-rose-50 dark:bg-rose-900/20' : 'group-hover:bg-rose-50 dark:group-hover:bg-rose-900/20'}`}>
-            <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+        <button
+          onClick={handleLike}
+          className={`flex items-center gap-2 transition-colors group ${localLiked ? 'text-rose-500' : 'text-slate-400 hover:text-rose-500'}`}
+        >
+          <div
+            className={`p-2 rounded-full transition-colors ${localLiked ? 'bg-rose-50 dark:bg-rose-900/20' : 'group-hover:bg-rose-50 dark:group-hover:bg-rose-900/20'}`}
+          >
+            <Heart className={`w-5 h-5 ${localLiked ? 'fill-current' : ''}`} />
           </div>
-          <span className="font-medium text-sm">{post.likes + (isLiked ? 1 : 0)}</span>
+          <span className="font-medium text-sm">{likeCount}</span>
         </button>
-        <button onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-2 text-slate-400 hover:text-blue-500 transition-colors group ${showComments ? 'text-blue-500' : ''}`}>
-          <div className="p-2 rounded-full group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 transition-colors"><MessageCircle className="w-5 h-5" /></div>
-          <span className="font-medium text-sm">{comments.length}</span>
+
+        <button onClick={() => onCommentClick(post)} className="flex items-center gap-2 text-slate-400 hover:text-blue-500 transition-colors group">
+          <div className="p-2 rounded-full group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 transition-colors">
+            <MessageCircle className="w-5 h-5" />
+          </div>
+          <span className="font-medium text-sm">{post.commentCount > 0 ? `${post.commentCount} ` : ''}Comments</span>
         </button>
+
         <button className="flex items-center gap-2 text-slate-400 hover:text-green-500 transition-colors ml-auto group">
-          <div className="p-2 rounded-full group-hover:bg-green-50 dark:group-hover:bg-green-900/20 transition-colors"><Share2 className="w-5 h-5" /></div>
+          <div className="p-2 rounded-full group-hover:bg-green-50 dark:group-hover:bg-green-900/20 transition-colors">
+            <Share2 className="w-5 h-5" />
+          </div>
         </button>
       </div>
 
       <AnimatePresence>
-        {showComments && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="mt-4 pt-4 border-t border-slate-200/50 dark:border-white/5 bg-slate-50/50 dark:bg-black/20 -mx-6 px-6 -mb-6 pb-6 rounded-b-3xl">
-              <div className="flex gap-3 mb-6">
-                <img src="https://i.pravatar.cc/150?u=me" className="w-8 h-8 rounded-full border border-white/50" />
-                <div className="flex-1 relative">
-                  <input type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                    placeholder="Add a comment..." className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 shadow-sm" />
-                  <button onClick={handleAddComment} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-brand-500 text-white rounded-xl hover:scale-105 transition-transform"><Send className="w-3 h-3" /></button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                {comments.map(c => <CommentNode key={c.id} comment={c} onReply={handleReply} />)}
-              </div>
-            </div>
-          </motion.div>
+        {confirmDelete && (
+          <ConfirmDeleteModal
+            title="Delete Post"
+            message="Are you sure you want to delete this post? All comments will also be removed. This action cannot be undone."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDelete(false)}
+          />
         )}
       </AnimatePresence>
-    </motion.div>
-  );
-}
-
-function ContentDetailModal({ content, onClose }) {
-  const isRecipe = content.type === 'recipe';
-  const payload = content.payload;
-  const description = payload?.description || "No description available.";
-  const tags = isRecipe ? (payload?.tags || []) : [payload?.training_type].filter(Boolean);
-  const imageUrl = payload?.imageUrl || content.image;
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col border border-white/20">
-        <div className="relative h-64 shrink-0">
-          <img src={imageUrl} alt={content.title} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-          <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-black/20 backdrop-blur-md hover:bg-black/40 text-white rounded-full transition-colors"><X className="w-5 h-5" /></button>
-          <div className="absolute bottom-6 left-6 right-6">
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${isRecipe ? 'bg-brand-500 text-white' : 'bg-blue-500 text-white'}`}>{content.type}</span>
-              {tags.map(tag => <span key={tag} className="px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-medium text-white border border-white/20">{tag}</span>)}
-            </div>
-            <h2 className="text-3xl font-bold text-white drop-shadow-md leading-tight">{content.title}</h2>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8">
-          {isRecipe && payload && (
-            <div className="grid grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5">
-              <div className="text-center">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Calories</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white flex justify-center items-center gap-1"><Flame className="w-4 h-4 text-orange-500" /> {payload.calories}</p>
-              </div>
-              <div className="text-center border-l border-slate-200 dark:border-white/10">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Prep Time</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white flex justify-center items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /> {payload.prepTime}</p>
-              </div>
-              <div className="text-center border-l border-slate-200 dark:border-white/10">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Protein</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">{payload.protein}g</p>
-              </div>
-              <div className="text-center border-l border-slate-200 dark:border-white/10">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Carbs</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">{payload.carbs}g</p>
-              </div>
-            </div>
-          )}
-          {!isRecipe && payload && (
-            <div className="flex gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5">
-              <div className="flex-1 text-center">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Duration</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white flex justify-center items-center gap-1"><Clock className="w-4 h-4 text-blue-500" /> {Math.floor(payload.est_time / 60)} min</p>
-              </div>
-              <div className="w-px bg-slate-200 dark:bg-white/10" />
-              <div className="flex-1 text-center">
-                <p className="text-xs text-slate-400 font-bold uppercase mb-1">Type</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white capitalize">{payload.training_type}</p>
-              </div>
-            </div>
-          )}
-          <div>
-            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">About this {content.type}</h3>
-            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{description}</p>
-          </div>
-          {isRecipe && payload?.ingredients && (
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-3">Ingredients</h3>
-              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {payload.ingredients.map((ing, i) => (
-                  <li key={i} className="flex items-center gap-3 p-3 bg-white dark:bg-white/5 border border-slate-100 dark:border-white/5 rounded-xl shadow-sm">
-                    <div className="w-2 h-2 rounded-full bg-brand-400 shrink-0" /><span className="text-sm font-medium text-slate-700 dark:text-slate-200">{ing}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {isRecipe && payload?.instructions && (
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-3">Preparation Steps</h3>
-              <div className="space-y-4">
-                {payload.instructions.map((step, i) => (
-                  <div key={i} className="flex gap-4">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold flex items-center justify-center text-sm border border-slate-200 dark:border-white/10">{i + 1}</div>
-                    <p className="flex-1 text-slate-600 dark:text-slate-300 leading-relaxed pt-1">{step}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {!isRecipe && payload?.exercises && (
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-3">Exercises</h3>
-              <div className="space-y-3">
-                {payload.exercises.map((ex, i) => (
-                  <div key={i} className="flex justify-between items-center p-4 bg-white dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
-                    <div>
-                      <span className="font-bold text-slate-700 dark:text-slate-200">{ex._exerciseDetails?.name || 'Unknown'}</span>
-                      <div className="text-xs text-slate-400 mt-1">{ex._exerciseDetails?.body_part}</div>
-                    </div>
-                    <div className="flex gap-4 text-sm text-slate-500">
-                      <span>{ex.sets.length} sets</span>
-                      {ex.sets[0] && <span>{ex.sets[0].volume} {ex.sets[0].units}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </motion.div>
     </div>
   );
 }
 
-function CreatePost({ onClose, onSubmit }) {
-  const [content, setContent] = useState('');
-  const [attachment, setAttachment] = useState(undefined);
-  const [activeTab, setActiveTab] = useState(null);
-  const [tags, setTags] = useState([]);
+// ======================== SHARED POST FORM MODAL (Create / Edit) ========================
+
+const SUGGESTED_TAGS = ['fitness', 'nutrition', 'recipe', 'workout', 'motivation', 'healthy', 'beginner', 'gains', 'weightloss', 'cardio'];
+
+function PostFormModal({ onClose, onSubmit, editPost }) {
+  const isEdit = !!editPost;
+  const [title, setTitle] = useState(editPost?.title || '');
+  const [content, setContent] = useState(editPost?.content || '');
+  const [tags, setTags] = useState(editPost?.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
-  const [attachmentSearchQuery, setAttachmentSearchQuery] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { if (!activeTab) setAttachmentSearchQuery(''); }, [activeTab]);
-
-  const filteredTags = SUGGESTED_TAGS.filter(t => !tags.includes(t) && t.toLowerCase().includes(tagInput.toLowerCase()));
+  const filteredTags = SUGGESTED_TAGS.filter((t) => !tags.includes(t) && t.toLowerCase().includes(tagInput.toLowerCase()));
 
   const addTag = (tag) => {
-    const cleanTag = tag.replace('#', '');
-    if (!tags.includes(cleanTag)) setTags([...tags, cleanTag]);
-    setTagInput(''); setShowTagSuggestions(false);
+    const clean = tag.replace('#', '').toLowerCase();
+    if (clean && !tags.includes(clean)) setTags([...tags, clean]);
+    setTagInput('');
+    setShowTagSuggestions(false);
   };
-  const removeTag = (tag) => setTags(tags.filter(t => t !== tag));
-  const handleSelectAttachment = (item) => { setAttachment(item); setActiveTab(null); };
+
+  const handleSubmit = async () => {
+    if (!title.trim() || !content.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        title: title.trim(),
+        content: content.trim(),
+        tags: tags.length > 0 ? tags : undefined,
+      };
+      if (isEdit && editPost.images?.length > 0) {
+        payload.images = editPost.images;
+      }
+      await onSubmit(payload);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-white/20 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-white/20 flex flex-col max-h-[90vh]"
+      >
         <div className="p-4 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
-          <h3 className="font-bold text-lg text-slate-800 dark:text-white pl-2">Create Post</h3>
-          <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+          <h3 className="font-bold text-lg text-slate-800 dark:text-white pl-2">{isEdit ? 'Edit Post' : 'Create Post'}</h3>
+          <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-5 h-5 text-slate-400" />
+          </button>
         </div>
+
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          <div className="flex gap-4">
-            <img src="https://i.pravatar.cc/150?u=me" alt="You" className="w-10 h-10 rounded-full border border-white/50 shrink-0" />
-            <div className="flex-1">
-              <textarea autoFocus value={content} onChange={(e) => setContent(e.target.value)}
-                placeholder="Share your progress, ask a question, or motivate others..."
-                className="w-full h-24 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none resize-none text-base" />
-            </div>
-          </div>
-          {/* Tag input */}
+          {/* Title */}
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Post title..."
+            className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-800 dark:text-white placeholder-slate-400 outline-none focus:ring-2 focus:ring-brand-500/20 text-base font-medium"
+          />
+
+          {/* Content */}
+          <textarea
+            autoFocus
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Share your progress, ask a question, or motivate others..."
+            className="w-full h-32 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-800 dark:text-white placeholder-slate-400 outline-none resize-none text-base focus:ring-2 focus:ring-brand-500/20"
+          />
+
+          {/* Tags */}
           <div className="space-y-2">
             <div className="flex flex-wrap gap-2 mb-2">
-              {tags.map(tag => (
-                <span key={tag} className="px-2.5 py-1 rounded-lg bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-xs font-bold border border-brand-200 dark:border-brand-700/50 flex items-center gap-1">
-                  #{tag}<button onClick={() => removeTag(tag)} className="hover:text-red-500 transition-colors"><X className="w-3 h-3" /></button>
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2.5 py-1 rounded-lg bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-xs font-bold border border-brand-200 dark:border-brand-700/50 flex items-center gap-1"
+                >
+                  #{tag}
+                  <button onClick={() => setTags(tags.filter((t) => t !== tag))} className="hover:text-red-500 transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
                 </span>
               ))}
             </div>
             <div className="relative">
               <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl">
                 <Hash className="w-4 h-4 text-slate-400" />
-                <input type="text" value={tagInput} onChange={(e) => { setTagInput(e.target.value); setShowTagSuggestions(true); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && tagInput.trim()) { e.preventDefault(); addTag(tagInput.trim()); } }}
-                  placeholder="Add tags..." className="flex-1 bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder-slate-400" />
+                <input
+                  type="text"
+                  value={tagInput}
+                  onChange={(e) => {
+                    setTagInput(e.target.value);
+                    setShowTagSuggestions(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && tagInput.trim()) {
+                      e.preventDefault();
+                      addTag(tagInput.trim());
+                    }
+                  }}
+                  placeholder="Add tags..."
+                  className="flex-1 bg-transparent text-sm text-slate-800 dark:text-white outline-none placeholder-slate-400"
+                />
               </div>
-              {showTagSuggestions && (tagInput || filteredTags.length > 0) && (
+              {showTagSuggestions && tagInput && filteredTags.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg z-50 max-h-40 overflow-y-auto">
-                  {filteredTags.map(tag => (
-                    <button key={tag} onClick={() => addTag(tag)} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2">
-                      <Hash className="w-3 h-3 text-brand-500" />{tag}
+                  {filteredTags.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => addTag(tag)}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2"
+                    >
+                      <Hash className="w-3 h-3 text-brand-500" />
+                      {tag}
                     </button>
                   ))}
-                  {tagInput && !filteredTags.includes(tagInput.toLowerCase()) && (
-                    <button onClick={() => addTag(tagInput)} className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2 font-medium">
-                      <Plus className="w-3 h-3 text-slate-400" />Create &quot;{tagInput}&quot;
-                    </button>
-                  )}
                 </div>
               )}
             </div>
           </div>
-          {attachment && (
-            <div className="relative">
-              <LinkedContentCard content={attachment} />
-              <button onClick={() => setAttachment(undefined)} className="absolute -top-1 -right-1 p-1.5 bg-rose-500 text-white rounded-full shadow-md hover:scale-110 transition-transform"><X className="w-3 h-3" /></button>
-            </div>
-          )}
-          <AnimatePresence>
-            {activeTab === 'recipe' && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 pb-2">
-                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Select a Recipe</p>
-                  <div className="relative mb-2">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" placeholder="Search recipes..." value={attachmentSearchQuery} onChange={(e) => setAttachmentSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20" />
-                  </div>
-                </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {AVAILABLE_RECIPES.filter(r => r.title.toLowerCase().includes(attachmentSearchQuery.toLowerCase())).map(recipe => (
-                    <div key={recipe.id} onClick={() => handleSelectAttachment(recipe)} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors">
-                      <img src={recipe.image} className="w-10 h-10 rounded-lg object-cover" /><div className="flex-1"><p className="text-sm font-bold text-slate-800 dark:text-white">{recipe.title}</p><p className="text-xs text-slate-500">{recipe.subtitle}</p></div><Plus className="w-4 h-4 text-brand-500" />
-                    </div>
-                  ))}
-                  {AVAILABLE_RECIPES.filter(r => r.title.toLowerCase().includes(attachmentSearchQuery.toLowerCase())).length === 0 && <p className="text-xs text-slate-400 text-center py-2">No recipes found.</p>}
-                </div>
-              </motion.div>
-            )}
-            {activeTab === 'workout' && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 pb-2">
-                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Select a Workout</p>
-                  <div className="relative mb-2">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input type="text" placeholder="Search workouts..." value={attachmentSearchQuery} onChange={(e) => setAttachmentSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20" />
-                  </div>
-                </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {AVAILABLE_WORKOUTS.filter(w => w.title.toLowerCase().includes(attachmentSearchQuery.toLowerCase())).map(workout => (
-                    <div key={workout.id} onClick={() => handleSelectAttachment(workout)} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors">
-                      <img src={workout.image} className="w-10 h-10 rounded-lg object-cover" /><div className="flex-1"><p className="text-sm font-bold text-slate-800 dark:text-white">{workout.title}</p><p className="text-xs text-slate-500">{workout.subtitle}</p></div><Plus className="w-4 h-4 text-brand-500" />
-                    </div>
-                  ))}
-                  {AVAILABLE_WORKOUTS.filter(w => w.title.toLowerCase().includes(attachmentSearchQuery.toLowerCase())).length === 0 && <p className="text-xs text-slate-400 text-center py-2">No workouts found.</p>}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {!attachment && (
-            <div className="flex gap-2 border-t border-slate-100 dark:border-white/5 pt-4">
-              <button onClick={() => setActiveTab(activeTab === 'recipe' ? null : 'recipe')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'recipe' ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'}`}>
-                <ChefHat className="w-4 h-4" /> Add Recipe
-              </button>
-              <button onClick={() => setActiveTab(activeTab === 'workout' ? null : 'workout')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'workout' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'}`}>
-                <Dumbbell className="w-4 h-4" /> Add Workout
-              </button>
-            </div>
-          )}
         </div>
+
         <div className="p-4 bg-slate-50 dark:bg-black/20 flex justify-end gap-3 border-t border-slate-100 dark:border-white/5">
-          <button onClick={onClose} className="px-5 py-2 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-700 dark:hover:text-white transition-colors">Cancel</button>
-          <button onClick={() => onSubmit(content, attachment, tags)} disabled={!content.trim()}
-            className="liquid-btn liquid-btn-primary px-6 py-2 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"><Send className="w-4 h-4" /> Post</button>
+          <button onClick={onClose} className="px-5 py-2 text-slate-500 dark:text-slate-400 font-bold hover:text-slate-700 dark:hover:text-white transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!title.trim() || !content.trim() || submitting}
+            className="liquid-btn liquid-btn-primary px-6 py-2 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {isEdit ? 'Save' : 'Post'}
+          </button>
         </div>
       </motion.div>
     </div>
   );
 }
 
-// --- MAIN COMPONENT ---
+// ======================== MAIN COMPONENT ========================
+
+const PAGE_SIZE = 15;
 
 export default function Community() {
-  const [posts, setPosts] = useState(INITIAL_POSTS);
+  const [posts, setPosts] = useState([]);
   const [sortMode, setSortMode] = useState('trending');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterType, setFilterType] = useState('All');
   const [isCreating, setIsCreating] = useState(false);
-  const [page, setPage] = useState(1);
-  const [selectedContent, setSelectedContent] = useState(null);
+  const [editingPost, setEditingPost] = useState(null);
+  const [commentPost, setCommentPost] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [likedPostIds, setLikedPostIds] = useState(new Set());
+  const skipRef = useRef(0);
+  const fetchIdRef = useRef(0);
+  const viewedPostIdsRef = useRef(new Set());
+  const [authorNames, setAuthorNames] = useState({});
 
-  const sortedPosts = useMemo(() => {
-    let sorted = [...posts];
-    if (sortMode === 'newest') {
-      sorted.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    } else {
-      sorted.sort((a, b) => calculateTrendingScore(b) - calculateTrendingScore(a));
-    }
-    return sorted;
-  }, [posts, sortMode]);
+  // Fetch current user on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          const auth = await res.json();
+          setCurrentUserId(auth.internal_uid || null);
+        }
+      } catch {
+        /* not logged in */
+      }
+    })();
+  }, []);
 
-  const filteredPosts = useMemo(() => {
-    return sortedPosts.filter(post => {
-      const query = searchQuery.toLowerCase();
-      const matchesText =
-        post.content.toLowerCase().includes(query) ||
-        post.user.name.toLowerCase().includes(query) ||
-        post.tags.some(t => t.toLowerCase().includes(query)) ||
-        post.linkedContent?.title.toLowerCase().includes(query);
-      if (!matchesText) return false;
-      if (filterType === 'Recipes') return post.linkedContent?.type === 'recipe';
-      if (filterType === 'Workouts') return post.linkedContent?.type === 'workout';
-      return true;
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Check like status for a batch of posts
+  const checkLikeStatus = useCallback(
+    async (postIds) => {
+      if (!currentUserId || postIds.length === 0) return;
+      try {
+        const result = await forumAPI.checkPostsLiked(postIds);
+        const newLiked = new Set(result.liked_post_ids || []);
+        setLikedPostIds((prev) => {
+          const merged = new Set(prev);
+          newLiked.forEach((id) => merged.add(id));
+          return merged;
+        });
+      } catch {
+        /* ignore */
+      }
+    },
+    [currentUserId]
+  );
+
+  // Fetch comment counts for a batch of posts
+  const fetchCommentCounts = useCallback(async (postsList) => {
+    const promises = postsList.map(async (post) => {
+      try {
+        const result = await forumAPI.getCommentsCount(post.id);
+        return { id: post.id, count: result.count };
+      } catch {
+        return { id: post.id, count: 0 };
+      }
     });
-  }, [sortedPosts, searchQuery, filterType]);
+    const results = await Promise.all(promises);
+    setPosts((prev) =>
+      prev.map((p) => {
+        const found = results.find((r) => r.id === p.id);
+        return found ? { ...p, commentCount: found.count } : p;
+      })
+    );
+  }, []);
 
-  const visiblePosts = filteredPosts.slice(0, page * 5);
-  const hasMore = visiblePosts.length < filteredPosts.length;
+  // Fetch author display names for posts
+  const fetchAuthorNames = useCallback(async (postsList) => {
+    const uids = postsList.map((p) => p.author_id).filter(Boolean);
+    if (uids.length === 0) return;
+    try {
+      const nameMap = await batchGetDisplayNames(uids);
+      setAuthorNames((prev) => {
+        const next = { ...prev };
+        nameMap.forEach((name, uid) => { next[uid] = name; });
+        return next;
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-  const handleCreatePost = (content, attachment, tags = []) => {
-    const newPost = {
-      id: Math.random().toString(),
-      user: { name: 'You', avatar: 'https://i.pravatar.cc/150?u=me', badge: 'New' },
-      content, likes: 0, commentsCount: 0, views: 1,
-      timestamp: new Date(), tags: tags, linkedContent: attachment
-    };
-    setPosts([newPost, ...posts]);
-    setIsCreating(false);
+  // Fetch posts
+  const fetchPosts = useCallback(
+    async (reset = false) => {
+      if (loading && !reset) return;
+      setLoading(true);
+      setError(null);
+
+      const currentFetchId = ++fetchIdRef.current;
+      const skip = reset ? 0 : skipRef.current;
+
+      try {
+        let data;
+
+        if (debouncedSearch.trim()) {
+          const category = filterType === 'Recipes' ? 'recipes' : filterType === 'Workouts' ? 'workouts' : 'posts';
+          const result = await forumAPI.searchForum(debouncedSearch, {
+            category,
+            sort_by: sortMode === 'trending' ? 'trending' : 'newest',
+            skip,
+            limit: PAGE_SIZE,
+          });
+          data = (result.posts || []).map((p) => ({
+            _id: p.id,
+            author_id: p.author_id,
+            title: p.title,
+            content: p.content,
+            tags: p.tags || [],
+            images: p.images || [],
+            total_likes: p.total_likes ?? 0,
+            views_count: p.views_count ?? 0,
+            _created_at: p.created_at,
+            _updated_at: p.updated_at,
+          }));
+          setHasMore(result.has_more ?? data.length === PAGE_SIZE);
+        } else if (sortMode === 'trending') {
+          data = await forumAPI.getTrendingPosts({ skip, limit: PAGE_SIZE });
+          setHasMore(data.length === PAGE_SIZE);
+        } else {
+          data = await forumAPI.getPosts({ skip, limit: PAGE_SIZE });
+          setHasMore(data.length === PAGE_SIZE);
+        }
+
+        if (currentFetchId !== fetchIdRef.current) return;
+
+        const mapped = data.map(mapPost);
+
+        if (reset) {
+          setPosts(mapped);
+          skipRef.current = mapped.length;
+          if (currentUserId && mapped.length > 0) {
+            setLikedPostIds(new Set());
+            checkLikeStatus(mapped.map((p) => p.id));
+          }
+          fetchCommentCounts(mapped);
+          fetchAuthorNames(mapped);
+        } else {
+          setPosts((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newPosts = mapped.filter((p) => !existingIds.has(p.id));
+            return [...prev, ...newPosts];
+          });
+          skipRef.current = skip + mapped.length;
+          const newIds = mapped.map((p) => p.id);
+          if (currentUserId && newIds.length > 0) {
+            checkLikeStatus(newIds);
+          }
+          fetchCommentCounts(mapped);
+          fetchAuthorNames(mapped);
+        }
+      } catch (e) {
+        if (currentFetchId !== fetchIdRef.current) return;
+        console.error('Failed to fetch posts:', e);
+        setError(e.message);
+      } finally {
+        if (currentFetchId === fetchIdRef.current) {
+          setLoading(false);
+          setInitialLoading(false);
+        }
+      }
+    },
+    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames]
+  );
+
+  // Reset & fetch on sort/search/filter change
+  useEffect(() => {
+    skipRef.current = 0;
+    setPosts([]);
+    setHasMore(true);
+    setInitialLoading(true);
+    fetchPosts(true);
+  }, [sortMode, debouncedSearch, filterType]);
+
+  // Re-check like status when currentUserId becomes available after posts loaded
+  useEffect(() => {
+    if (!currentUserId || posts.length === 0) return;
+    // Only re-check if likedPostIds is empty (meaning initial fetch didn't check)
+    if (likedPostIds.size > 0) return;
+    checkLikeStatus(posts.map((p) => p.id));
+  }, [currentUserId, posts.length]);
+
+  const loadMore = useCallback(() => {
+    if (!loading && hasMore) fetchPosts(false);
+  }, [fetchPosts, loading, hasMore]);
+
+  const sentinelRef = useInfiniteScroll(loadMore, hasMore, loading);
+  const { containerRef, totalHeight, offsetY, visibleItems } = useVirtualList(posts, 280, 5);
+
+  // Create post handler
+  const handleCreatePost = async (postData) => {
+    try {
+      const created = await forumAPI.createPost(postData);
+      const mapped = mapPost(created);
+      setPosts((prev) => [mapped, ...prev]);
+      fetchAuthorNames([mapped]);
+      setIsCreating(false);
+    } catch (e) {
+      console.error('Failed to create post:', e);
+      alert('Failed to create post: ' + e.message);
+    }
   };
 
-  const handleLike = (id) => {
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, likes: p.likes + 1 } : p));
+  // Edit post handler
+  const handleEditPost = async (postData) => {
+    if (!editingPost) return;
+    try {
+      const updated = await forumAPI.updatePost(editingPost.id, postData);
+      const mapped = mapPost(updated);
+      mapped.commentCount = editingPost.commentCount || 0;
+      setPosts((prev) => prev.map((p) => (p.id === editingPost.id ? mapped : p)));
+      setEditingPost(null);
+    } catch (e) {
+      console.error('Failed to update post:', e);
+      alert('Failed to update post: ' + e.message);
+    }
+  };
+
+  // Delete post handler
+  const handleDeletePost = async (postId) => {
+    try {
+      await forumAPI.deletePost(postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    } catch (e) {
+      console.error('Failed to delete post:', e);
+      alert('Failed to delete post: ' + e.message);
+    }
+  };
+
+  // Like change handler
+  const handleLikeChange = (postId, liked) => {
+    setLikedPostIds((prev) => {
+      const next = new Set(prev);
+      if (liked) next.add(postId);
+      else next.delete(postId);
+      return next;
+    });
+  };
+
+  // Comment count change handler (called from CommentModal)
+  const handleCommentCountChange = (postId, count) => {
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, commentCount: count } : p)));
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 max-w-4xl mx-auto">
+      {/* Header */}
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
           <div>
@@ -681,36 +1195,49 @@ export default function Community() {
           </div>
           <div className="flex gap-3 items-center self-end md:self-auto">
             <div className="flex bg-slate-200/50 dark:bg-white/5 p-1 rounded-xl border border-white/10">
-              <button onClick={() => setSortMode('trending')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${sortMode === 'trending' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400' : 'text-slate-500'}`}>
+              <button
+                onClick={() => setSortMode('trending')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${sortMode === 'trending' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400' : 'text-slate-500'}`}
+              >
                 <TrendingUp className="w-4 h-4" /> Trending
               </button>
-              <button onClick={() => setSortMode('newest')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${sortMode === 'newest' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400' : 'text-slate-500'}`}>
+              <button
+                onClick={() => setSortMode('newest')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${sortMode === 'newest' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-600 dark:text-brand-400' : 'text-slate-500'}`}
+              >
                 <Clock className="w-4 h-4" /> Newest
               </button>
             </div>
-            <button onClick={() => setIsCreating(true)}
-              className="liquid-btn liquid-btn-primary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2">
+            <button onClick={() => setIsCreating(true)} className="liquid-btn liquid-btn-primary px-5 py-2.5 rounded-xl font-bold flex items-center gap-2">
               <Plus className="w-5 h-5" /> <span className="hidden sm:inline">New Post</span>
             </button>
           </div>
         </div>
 
+        {/* Search bar */}
         <div className="glass-panel p-2 rounded-2xl flex flex-col md:flex-row gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search posts, recipes, workouts, or authors..."
-              className="w-full pl-10 pr-10 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none" />
+              className="w-full pl-10 pr-10 py-3 bg-transparent text-slate-800 dark:text-white placeholder-slate-400 outline-none"
+            />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
             )}
           </div>
           <div className="flex gap-1 border-l border-slate-200 dark:border-white/10 pl-2">
-            {['All', 'Recipes', 'Workouts'].map(f => (
-              <button key={f} onClick={() => setFilterType(f)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${filterType === f ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 shadow-lg' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+            {['All', 'Recipes', 'Workouts'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilterType(f)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${filterType === f ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 shadow-lg' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}
+              >
                 {f}
               </button>
             ))}
@@ -718,34 +1245,77 @@ export default function Community() {
         </div>
       </div>
 
-      <div className="space-y-6">
-        <AnimatePresence mode="popLayout">
-          {visiblePosts.length > 0 ? (
-            <div key="posts-list">
-              {visiblePosts.map((post) => (
-                <PostCard key={post.id} post={post} onLike={handleLike} onContentClick={(content) => setSelectedContent(content)} />
+      {/* Error banner */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl text-red-700 dark:text-red-300 text-sm flex items-center justify-between">
+          <span>Failed to load posts. Please try again.</span>
+          <button onClick={() => fetchPosts(true)} className="font-bold hover:underline ml-4">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Posts feed with virtualization */}
+      <div ref={containerRef}>
+        {initialLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-brand-500 mb-4" />
+            <p className="text-sm text-slate-400">Loading community feed...</p>
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="text-center py-20 opacity-50">
+            <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+            <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
+            <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <div style={{ minHeight: totalHeight, position: 'relative' }}>
+            <div style={{ transform: `translateY(${offsetY}px)` }}>
+              {visibleItems.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={currentUserId}
+                  isLiked={likedPostIds.has(post.id)}
+                  onLikeChange={handleLikeChange}
+                  onCommentClick={(p) => setCommentPost(p)}
+                  onEdit={(p) => setEditingPost(p)}
+                  onDelete={handleDeletePost}
+                  viewedPostIdsRef={viewedPostIdsRef}
+                  authorName={authorNames[post.author_id]}
+                />
               ))}
-              {hasMore && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center pt-4">
-                  <button onClick={() => setPage(p => p + 1)}
-                    className="px-6 py-3 rounded-xl bg-white/40 dark:bg-white/5 border border-white/20 hover:bg-white/60 text-slate-600 dark:text-slate-300 font-bold transition-all">Load More Posts</button>
-                </motion.div>
-              )}
             </div>
-          ) : (
-            <div className="text-center py-20 opacity-50">
-              <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-              <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
-              <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
-            </div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
+
+        <div ref={sentinelRef} className="h-4" />
+
+        {loading && !initialLoading && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
+            <span className="ml-2 text-sm text-slate-400">Loading more...</span>
+          </div>
+        )}
+
+        {!hasMore && posts.length > 0 && (
+          <div className="text-center py-8 text-sm text-slate-400">You&apos;ve reached the end of the feed</div>
+        )}
       </div>
 
-      {isCreating && <CreatePost onClose={() => setIsCreating(false)} onSubmit={handleCreatePost} />}
+      {/* Create Post Modal */}
+      <AnimatePresence>{isCreating && <PostFormModal onClose={() => setIsCreating(false)} onSubmit={handleCreatePost} />}</AnimatePresence>
 
+      {/* Edit Post Modal (shared form) */}
       <AnimatePresence>
-        {selectedContent && <ContentDetailModal content={selectedContent} onClose={() => setSelectedContent(null)} />}
+        {editingPost && <PostFormModal onClose={() => setEditingPost(null)} onSubmit={handleEditPost} editPost={editingPost} />}
+      </AnimatePresence>
+
+      {/* Comment Modal */}
+      <AnimatePresence>
+        {commentPost && (
+          <CommentModal post={commentPost} onClose={() => setCommentPost(null)} currentUserId={currentUserId} onCommentCountChange={handleCommentCountChange} />
+        )}
       </AnimatePresence>
     </motion.div>
   );

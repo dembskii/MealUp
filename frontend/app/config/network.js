@@ -14,6 +14,7 @@ export const ENDPOINTS = {
   USERS: `${API_ENDPOINT_URL}/user`,
   RECIPES: `${API_ENDPOINT_URL}/recipes`,
   WORKOUTS: `${API_ENDPOINT_URL}/workouts`,
+  FORUM: `${API_ENDPOINT_URL}/forum`,
 };
 
 export default {

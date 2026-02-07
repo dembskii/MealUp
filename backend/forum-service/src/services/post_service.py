@@ -8,7 +8,9 @@ from sqlalchemy import func
 
 from src.models.post import Post
 from src.models.post_view import PostView
+from src.models.post_like import PostLike
 from src.models.comment import Comment
+from src.models.comment_like import CommentLike
 from src.services.comment_service import CommentService
 
 
@@ -114,7 +116,7 @@ class PostService:
         session: AsyncSession,
         post_id: UUID
     ) -> bool:
-        """Delete a post by its ID"""
+        """Delete a post by its ID, including all related records"""
         try:
             statement = select(Post).where(Post.id == post_id)
             result = await session.exec(statement)
@@ -123,12 +125,48 @@ class PostService:
                 logger.warning(f"No post found with ID: {post_id} for deletion")
                 return False
 
+            # 1. Find all comment IDs for this post
+            comment_stmt = select(Comment.id).where(Comment.post_id == post_id)
+            comment_result = await session.exec(comment_stmt)
+            comment_ids = comment_result.all()
+
+            # 2. Delete CommentLikes for those comments
+            if comment_ids:
+                for cid in comment_ids:
+                    cl_stmt = select(CommentLike).where(CommentLike.comment_id == cid)
+                    cl_result = await session.exec(cl_stmt)
+                    for cl in cl_result.all():
+                        await session.delete(cl)
+
+            # 3. Delete Comments
+            if comment_ids:
+                for cid in comment_ids:
+                    c_stmt = select(Comment).where(Comment.id == cid)
+                    c_result = await session.exec(c_stmt)
+                    comment = c_result.first()
+                    if comment:
+                        await session.delete(comment)
+
+            # 4. Delete PostLikes
+            pl_stmt = select(PostLike).where(PostLike.post_id == post_id)
+            pl_result = await session.exec(pl_stmt)
+            for pl in pl_result.all():
+                await session.delete(pl)
+
+            # 5. Delete PostViews
+            pv_stmt = select(PostView).where(PostView.post_id == post_id)
+            pv_result = await session.exec(pv_stmt)
+            for pv in pv_result.all():
+                await session.delete(pv)
+
+            # 6. Delete the Post itself
             await session.delete(post)
             await session.commit()
-            logger.info(f"Deleted post with ID: {post_id}")
+            logger.info(f"Deleted post with ID: {post_id} and all related records")
             return True
         except Exception as e:
             logger.error(f"Error in delete_post: {str(e)}")
+            await session.rollback()
             return False
 
 
