@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { ENDPOINTS } from "../../config/network";
-import { X, Plus, Trash2, Clock, ChefHat, Image, Loader2, Save, Search, ChevronDown } from "lucide-react";
+import { X, Plus, Minus, Trash2, Clock, ChefHat, Image, Loader2, Save, Search, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = ENDPOINTS.RECIPES;
@@ -228,10 +228,16 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
                 <Clock className="w-3 h-3" /> Prep Time (minutes)
               </label>
-              <input type="number" value={formData.time_to_prepare} min="1"
-                onChange={(e) => setFormData({ ...formData, time_to_prepare: parseInt(e.target.value) || 1 })}
-                className="w-full p-3 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium"
-                required />
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setFormData(prev => ({ ...prev, time_to_prepare: Math.max(1, prev.time_to_prepare - 5) }))}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-4 h-4" /></button>
+                <input type="text" inputMode="numeric" value={formData.time_to_prepare}
+                  onChange={(e) => setFormData({ ...formData, time_to_prepare: parseInt(e.target.value) || 1 })}
+                  className="flex-1 p-3 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium text-center"
+                  required />
+                <button type="button" onClick={() => setFormData(prev => ({ ...prev, time_to_prepare: prev.time_to_prepare + 5 }))}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-4 h-4" /></button>
+              </div>
             </div>
 
             {/* Ingredients */}
@@ -297,15 +303,22 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
 
                       {/* Quantity & Unit & Remove */}
                       <div className="flex items-center gap-2">
-                        <input type="number" placeholder="Qty" value={ing.quantity} min="0.1" step="0.1"
+                        <button type="button" onClick={() => handleIngredientChange(index, "quantity", Math.max(0.1, (ing.quantity || 0.1) - 1))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg liquid-input text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                        <input type="text" inputMode="decimal" placeholder="Qty" value={ing.quantity}
                           onChange={(e) => handleIngredientChange(index, "quantity", parseFloat(e.target.value) || 0)}
-                          className="flex-1 p-2.5 text-sm liquid-input rounded-xl text-center font-medium"
+                          className="w-16 p-2.5 text-sm liquid-input rounded-xl text-center font-medium"
                           required />
-                        <select value={ing.capacity}
-                          onChange={(e) => handleIngredientChange(index, "capacity", e.target.value)}
-                          className="p-2.5 text-sm liquid-input rounded-xl bg-white dark:bg-slate-800 font-medium">
-                          {CAPACITY_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-                        </select>
+                        <button type="button" onClick={() => handleIngredientChange(index, "quantity", (ing.quantity || 0) + 1)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg liquid-input text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                        <div className="relative">
+                          <select value={ing.capacity}
+                            onChange={(e) => handleIngredientChange(index, "capacity", e.target.value)}
+                            className="p-2.5 text-sm liquid-input rounded-xl text-slate-800 dark:text-white font-medium outline-none appearance-none cursor-pointer pr-7">
+                            {CAPACITY_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                          </select>
+                          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                        </div>
                         {ingredients.length > 1 && (
                           <button type="button" onClick={() => handleRemoveIngredient(index)}
                             className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full text-red-500 transition-colors">

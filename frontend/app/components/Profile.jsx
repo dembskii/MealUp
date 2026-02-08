@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
 import {
   User, MapPin, Calendar, Heart, Clock, Flame, Award, Settings, Loader2, ChefHat, ArrowRight,
   CheckCircle2, X, Dumbbell, Activity, Layers, Search, Filter, Edit3, Save, Trash2,
-  ChevronDown, Plus
+  ChevronDown, Plus, Minus
 } from 'lucide-react';
 import {
   getMyWorkoutPlans, getTrainings, getExercises,
@@ -40,6 +41,64 @@ const authApi = axios.create({ baseURL: ENDPOINTS.AUTH, withCredentials: true })
 const userApi = axios.create({ baseURL: ENDPOINTS.USERS, withCredentials: true });
 const recipeApi = axios.create({ baseURL: ENDPOINTS.RECIPES, withCredentials: true });
 
+function CustomSelect({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const update = () => {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => { window.removeEventListener('scroll', update, true); window.removeEventListener('resize', update); };
+  }, [open]);
+
+  const selected = options.find(o => o.value === value);
+  return (
+    <div ref={btnRef}>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full p-3 rounded-xl liquid-input text-sm font-medium outline-none cursor-pointer flex items-center justify-between gap-2 text-slate-800 dark:text-white hover:bg-white/50 dark:hover:bg-white/10 transition-colors">
+        <span className="truncate">{selected?.label || placeholder || 'Select...'}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}>
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 dark:border-white/10 overflow-hidden">
+            {options.map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`w-full px-4 py-2.5 text-left text-sm font-medium transition-colors flex items-center justify-between
+                  ${value === opt.value
+                    ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'}`}>
+                <span>{opt.label}</span>
+                {value === opt.value && <CheckCircle2 className="w-3.5 h-3.5 text-brand-500" />}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function Profile() {
   const [activeTab, setActiveTab] = useState('my_recipes');
 
@@ -67,8 +126,12 @@ export default function Profile() {
   const [showWorkoutFilters, setShowWorkoutFilters] = useState(false);
   const [filterTrainingType, setFilterTrainingType] = useState('ALL');
   const [filterBodyPart, setFilterBodyPart] = useState('ALL');
-  const [filterAdvancement, setFilterAdvancement] = useState('ALL');
   const [filterMaxTime, setFilterMaxTime] = useState(120);
+
+  // Recipe filter state
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
+  const [showRecipeFilters, setShowRecipeFilters] = useState(false);
+  const [recipeFilters, setRecipeFilters] = useState({ time: 'All', maxCalories: 'All', minProtein: 'All', sort: 'newest' });
 
   // Detail / edit modals
   const [selectedTraining, setSelectedTraining] = useState(null);
@@ -280,13 +343,80 @@ export default function Profile() {
         const hasBodyPart = t.exercises.some(ex => ex._exerciseDetails?.body_part === filterBodyPart);
         if (!hasBodyPart) return false;
       }
-      if (filterAdvancement !== 'ALL') {
-        const hasAdv = t.exercises.some(ex => ex._exerciseDetails?.advancement === filterAdvancement);
-        if (!hasAdv) return false;
+      return true;
+    });
+  }, [myTrainings, workoutSearchQuery, filterTrainingType, filterMaxTime, filterBodyPart]);
+
+  const toGrams = (quantity, capacity) => {
+    switch (capacity) {
+      case 'kg': return quantity * 1000;
+      case 'ml': return quantity;
+      case 'l': return quantity * 1000;
+      case 'oz': return quantity * 28.35;
+      case 'lb': return quantity * 453.6;
+      case 'tsp': return quantity * 5;
+      case 'tbsp': return quantity * 15;
+      case 'cup': return quantity * 240;
+      case 'pcs': return quantity * 100;
+      default: return quantity;
+    }
+  };
+
+  const calculateMacros = (recipe) => {
+    let calories = 0, protein = 0, carbs = 0, fat = 0, totalWeight = 0;
+    if (recipe.ingredients) {
+      recipe.ingredients.forEach(item => {
+        const ing = ingredientMap[item.ingredient_id];
+        const weightG = toGrams(item.quantity || 0, item.capacity);
+        totalWeight += weightG;
+        if (ing?.macro_per_hundred) {
+          const factor = weightG / 100;
+          calories += (ing.macro_per_hundred.calories || 0) * factor;
+          protein += (ing.macro_per_hundred.proteins || 0) * factor;
+          carbs += (ing.macro_per_hundred.carbs || 0) * factor;
+          fat += (ing.macro_per_hundred.fats || 0) * factor;
+        }
+      });
+    }
+    if (totalWeight > 0) {
+      const norm = 100 / totalWeight;
+      return { calories: Math.round(calories * norm), protein: Math.round(protein * norm), carbs: Math.round(carbs * norm), fat: Math.round(fat * norm) };
+    }
+    return { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  };
+
+  const filteredMyRecipes = useMemo(() => {
+    let filtered = myRecipes.filter(recipe => {
+      if (recipeSearchQuery && !recipe.name?.toLowerCase().includes(recipeSearchQuery.toLowerCase())) return false;
+      if (recipeFilters.time !== 'All') {
+        const limitSeconds = parseInt(recipeFilters.time) * 60;
+        if (!recipe.time_to_prepare || recipe.time_to_prepare > limitSeconds) return false;
+      }
+      if (recipeFilters.maxCalories !== 'All') {
+        const macros = calculateMacros(recipe);
+        if (macros.calories > parseInt(recipeFilters.maxCalories)) return false;
+      }
+      if (recipeFilters.minProtein !== 'All') {
+        const macros = calculateMacros(recipe);
+        if (macros.protein < parseInt(recipeFilters.minProtein)) return false;
       }
       return true;
     });
-  }, [myTrainings, workoutSearchQuery, filterTrainingType, filterMaxTime, filterBodyPart, filterAdvancement]);
+    if (recipeFilters.sort === 'newest') {
+      filtered.sort((a, b) => new Date(b._created_at || 0) - new Date(a._created_at || 0));
+    } else if (recipeFilters.sort === 'popular') {
+      filtered.sort((a, b) => (b.total_likes || 0) - (a.total_likes || 0));
+    } else if (recipeFilters.sort === 'fastest') {
+      filtered.sort((a, b) => (a.time_to_prepare || 9999) - (b.time_to_prepare || 9999));
+    } else if (recipeFilters.sort === 'calories_low') {
+      filtered.sort((a, b) => calculateMacros(a).calories - calculateMacros(b).calories);
+    } else if (recipeFilters.sort === 'protein_high') {
+      filtered.sort((a, b) => calculateMacros(b).protein - calculateMacros(a).protein);
+    }
+    return filtered;
+  }, [myRecipes, recipeSearchQuery, recipeFilters, ingredientMap]);
+
+  const recipeActiveFilterCount = [recipeFilters.time, recipeFilters.maxCalories, recipeFilters.minProtein].filter(v => v !== 'All').length;
 
   const filteredExercisesForPicker = useMemo(() => {
     return allExercises.filter(ex => {
@@ -484,43 +614,7 @@ export default function Profile() {
     { value: 'cup', label: 'cup' }, { value: 'oz', label: 'oz' }, { value: 'lb', label: 'lb' }, { value: 'pcs', label: 'pcs' },
   ];
 
-  const toGrams = (quantity, capacity) => {
-    switch (capacity) {
-      case 'kg': return quantity * 1000;
-      case 'ml': return quantity;
-      case 'l': return quantity * 1000;
-      case 'oz': return quantity * 28.35;
-      case 'lb': return quantity * 453.6;
-      case 'tsp': return quantity * 5;
-      case 'tbsp': return quantity * 15;
-      case 'cup': return quantity * 240;
-      case 'pcs': return quantity * 100;
-      default: return quantity;
-    }
-  };
 
-  const calculateMacros = (recipe) => {
-    let calories = 0, protein = 0, carbs = 0, fat = 0, totalWeight = 0;
-    if (recipe.ingredients) {
-      recipe.ingredients.forEach(item => {
-        const ing = ingredientMap[item.ingredient_id];
-        const weightG = toGrams(item.quantity || 0, item.capacity);
-        totalWeight += weightG;
-        if (ing?.macro_per_hundred) {
-          const factor = weightG / 100;
-          calories += (ing.macro_per_hundred.calories || 0) * factor;
-          protein += (ing.macro_per_hundred.proteins || 0) * factor;
-          carbs += (ing.macro_per_hundred.carbs || 0) * factor;
-          fat += (ing.macro_per_hundred.fats || 0) * factor;
-        }
-      });
-    }
-    if (totalWeight > 0) {
-      const norm = 100 / totalWeight;
-      return { calories: Math.round(calories * norm), protein: Math.round(protein * norm), carbs: Math.round(carbs * norm), fat: Math.round(fat * norm) };
-    }
-    return { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  };
 
   const formatTime = (seconds) => {
     if (!seconds) return '? min';
@@ -750,12 +844,80 @@ export default function Profile() {
         <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
           {activeTab === 'my_recipes' && (
             <div>
-              {myRecipes.length > 0 ? (
+              {/* Search & Filter Bar */}
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                    <input type="text" value={recipeSearchQuery} onChange={(e) => setRecipeSearchQuery(e.target.value)} placeholder="Search your recipes..."
+                      className="w-full pl-10 pr-4 py-3 liquid-input rounded-2xl text-slate-800 dark:text-white placeholder-slate-400 outline-none" />
+                  </div>
+                  <button onClick={() => setShowRecipeFilters(!showRecipeFilters)}
+                    className={`px-4 py-3 rounded-2xl flex items-center gap-2 font-semibold transition-all liquid-btn ${showRecipeFilters ? 'bg-slate-800 text-white shadow-lg' : 'liquid-btn-secondary'}`}>
+                    <Filter className="w-4 h-4" /><span>Filters</span>
+                    {recipeActiveFilterCount > 0 && (<span className="min-w-[18px] h-[18px] rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">{recipeActiveFilterCount}</span>)}
+                  </button>
+                </div>
+                <AnimatePresence>
+                  {showRecipeFilters && (
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                      <div className="glass-panel rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Prep Time</label>
+                          <CustomSelect value={recipeFilters.time} onChange={(v) => setRecipeFilters({...recipeFilters, time: v})}
+                            options={[
+                              { value: 'All', label: 'Any Time' },
+                              { value: '15', label: 'Under 15 min' },
+                              { value: '30', label: 'Under 30 min' },
+                              { value: '60', label: 'Under 60 min' },
+                              { value: '120', label: 'Under 2 hours' },
+                            ]} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Calories / 100g</label>
+                          <CustomSelect value={recipeFilters.maxCalories} onChange={(v) => setRecipeFilters({...recipeFilters, maxCalories: v})}
+                            options={[
+                              { value: 'All', label: 'Any' },
+                              { value: '100', label: 'Under 100 kcal' },
+                              { value: '200', label: 'Under 200 kcal' },
+                              { value: '300', label: 'Under 300 kcal' },
+                              { value: '500', label: 'Under 500 kcal' },
+                            ]} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Min Protein / 100g</label>
+                          <CustomSelect value={recipeFilters.minProtein} onChange={(v) => setRecipeFilters({...recipeFilters, minProtein: v})}
+                            options={[
+                              { value: 'All', label: 'Any' },
+                              { value: '10', label: '10g+' },
+                              { value: '20', label: '20g+' },
+                              { value: '30', label: '30g+' },
+                              { value: '40', label: '40g+' },
+                            ]} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Sort By</label>
+                          <CustomSelect value={recipeFilters.sort} onChange={(v) => setRecipeFilters({...recipeFilters, sort: v})}
+                            options={[
+                              { value: 'newest', label: 'Newest' },
+                              { value: 'popular', label: 'Most Popular' },
+                              { value: 'fastest', label: 'Fastest' },
+                              { value: 'calories_low', label: 'Lowest Calories' },
+                              { value: 'protein_high', label: 'Highest Protein' },
+                            ]} />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {filteredMyRecipes.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {myRecipes.map(recipe => <RecipeGridItem key={recipe._id} recipe={recipe} />)}
+                  {filteredMyRecipes.map(recipe => <RecipeGridItem key={recipe._id} recipe={recipe} />)}
                 </div>
               ) : (
-                <p className="text-center text-slate-400 py-10">You haven&apos;t created any recipes yet.</p>
+                <p className="text-center text-slate-400 py-10">{myRecipes.length > 0 ? 'No recipes match your filters.' : "You haven't created any recipes yet."}</p>
               )}
 
               {/* LIKED RECIPES SECTION */}
@@ -908,17 +1070,6 @@ export default function Profile() {
                               <button key={bp} onClick={() => setFilterBodyPart(bp)}
                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterBodyPart === bp ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
                                 {bp === 'ALL' ? 'All' : bp.replace('_', ' ')}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Award className="w-3 h-3" /> Advancement</label>
-                          <div className="flex flex-wrap gap-2">
-                            {['ALL', ...Object.values(Advancement)].map(adv => (
-                              <button key={adv} onClick={() => setFilterAdvancement(adv)}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterAdvancement === adv ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
-                                {adv === 'ALL' ? 'All' : adv}
                               </button>
                             ))}
                           </div>
@@ -1101,17 +1252,26 @@ export default function Profile() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Type</label>
-                    <select value={editingTraining.training_type} onChange={e => setEditingTraining({...editingTraining, training_type: e.target.value})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
-                      {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                    </select>
+                    <div className="relative group">
+                      <select value={editingTraining.training_type} onChange={e => setEditingTraining({...editingTraining, training_type: e.target.value})}
+                        className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium cursor-pointer pr-10">
+                        {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
-                    <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setEditingTraining(prev => ({...prev, est_time: Math.max(60, prev.est_time - 60)}))}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-4 h-4" /></button>
+                      <input type="text" inputMode="numeric" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: (parseInt(e.target.value) || 1) * 60})}
+                        className="flex-1 p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium text-center" />
+                      <button type="button" onClick={() => setEditingTraining(prev => ({...prev, est_time: prev.est_time + 60}))}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1142,12 +1302,19 @@ export default function Profile() {
                         {ex.sets.map((set, setIdx) => (
                           <div key={setIdx} className="flex gap-2 items-center bg-white/60 dark:bg-black/20 p-2 rounded-2xl border border-white/40 dark:border-white/5 group/set">
                             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400">{setIdx + 1}</div>
-                            <input type="number" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value))}
-                              className="w-14 p-2 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
-                            <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
-                              className="flex-1 p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer">
-                              {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                            </select>
+                            <button type="button" onClick={() => handleEditUpdateSet(exIdx, setIdx, 'volume', Math.max(1, (set.volume || 1) - 1))}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                            <input type="text" inputMode="numeric" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value) || 0)}
+                              className="w-10 p-1 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
+                            <button type="button" onClick={() => handleEditUpdateSet(exIdx, setIdx, 'volume', (set.volume || 0) + 1)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                            <div className="relative flex-1">
+                              <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
+                                className="w-full p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer appearance-none pr-6">
+                                {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                            </div>
                             <button onClick={() => handleEditRemoveSet(exIdx, setIdx)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/set:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
                           </div>
                         ))}
@@ -1159,9 +1326,17 @@ export default function Profile() {
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <div className="flex items-center gap-2">
                           <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Rest (s)</label>
-                          <input type="number" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
-                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
-                          })} className="w-20 p-2 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: Math.max(0, (exercises[exIdx].rest_between_sets || 0) - 5) }; return { ...prev, exercises };
+                            })} className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                            <input type="text" inputMode="numeric" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
+                            })} className="w-12 p-1 bg-transparent text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                            <button type="button" onClick={() => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: (exercises[exIdx].rest_between_sets || 0) + 5 }; return { ...prev, exercises };
+                            })} className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Notes</label>
@@ -1629,9 +1804,15 @@ export default function Profile() {
                 {/* Prep time */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Prep Time (minutes)</label>
-                  <input type="number" min="1" value={Math.round((editingRecipe.time_to_prepare || 0) / 60)}
-                    onChange={(e) => setEditingRecipe({ ...editingRecipe, time_to_prepare: Math.max(1, parseInt(e.target.value) || 1) * 60 })}
-                    className="w-full p-3 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setEditingRecipe(prev => ({ ...prev, time_to_prepare: Math.max(60, (prev.time_to_prepare || 60) - 300) }))}
+                      className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-4 h-4" /></button>
+                    <input type="text" inputMode="numeric" value={Math.round((editingRecipe.time_to_prepare || 0) / 60)}
+                      onChange={(e) => setEditingRecipe({ ...editingRecipe, time_to_prepare: Math.max(1, parseInt(e.target.value) || 1) * 60 })}
+                      className="flex-1 p-3 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium text-center" />
+                    <button type="button" onClick={() => setEditingRecipe(prev => ({ ...prev, time_to_prepare: (prev.time_to_prepare || 0) + 300 }))}
+                      className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-4 h-4" /></button>
+                  </div>
                 </div>
 
                 {/* Ingredients */}
@@ -1713,23 +1894,36 @@ export default function Profile() {
 
                           {/* Quantity & Unit & Remove */}
                           <div className="flex items-center gap-2">
-                            <input type="number" min="0.1" step="0.1" value={ing.quantity}
+                            <button type="button" onClick={() => {
+                              const updated = [...editingRecipe.ingredients];
+                              updated[i] = { ...updated[i], quantity: Math.max(0.1, (ing.quantity || 0.1) - 1) };
+                              setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                            }} className="w-8 h-8 flex items-center justify-center rounded-lg liquid-input text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                            <input type="text" inputMode="decimal" value={ing.quantity}
                               onChange={(e) => {
                                 const updated = [...editingRecipe.ingredients];
                                 updated[i] = { ...updated[i], quantity: parseFloat(e.target.value) || 0 };
                                 setEditingRecipe({ ...editingRecipe, ingredients: updated });
                               }}
-                              className="flex-1 p-2.5 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none font-medium"
-                              placeholder="Quantity" />
-                            <select value={ing.capacity}
-                              onChange={(e) => {
-                                const updated = [...editingRecipe.ingredients];
-                                updated[i] = { ...updated[i], capacity: e.target.value };
-                                setEditingRecipe({ ...editingRecipe, ingredients: updated });
-                              }}
-                              className="p-2.5 text-sm liquid-input rounded-xl bg-white dark:bg-slate-800 font-medium">
-                              {CAPACITY_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-                            </select>
+                              className="w-16 p-2.5 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none font-medium text-center"
+                              placeholder="Qty" />
+                            <button type="button" onClick={() => {
+                              const updated = [...editingRecipe.ingredients];
+                              updated[i] = { ...updated[i], quantity: (ing.quantity || 0) + 1 };
+                              setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                            }} className="w-8 h-8 flex items-center justify-center rounded-lg liquid-input text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                            <div className="relative">
+                              <select value={ing.capacity}
+                                onChange={(e) => {
+                                  const updated = [...editingRecipe.ingredients];
+                                  updated[i] = { ...updated[i], capacity: e.target.value };
+                                  setEditingRecipe({ ...editingRecipe, ingredients: updated });
+                                }}
+                                className="p-2.5 text-sm liquid-input rounded-xl text-slate-800 dark:text-white font-medium outline-none appearance-none cursor-pointer pr-7">
+                                {CAPACITY_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                            </div>
                             <button type="button" onClick={() => {
                               const updated = editingRecipe.ingredients.filter((_, idx) => idx !== i);
                               setEditingRecipe({ ...editingRecipe, ingredients: updated });

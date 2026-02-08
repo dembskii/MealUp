@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   TrainingType, SetUnit, BodyPart, Advancement
 } from '../data/types';
@@ -16,11 +17,70 @@ import {
   likeWorkout, unlikeWorkout, getLikedWorkouts, checkWorkoutsLikedBulk,
 } from '../services/userService';
 import {
-  Dumbbell, Clock, Activity, Plus, Sparkles, X,
-  Loader2, Search, Filter, ChevronDown, Award, Edit3,
-  Save, Trash2, Calendar, LayoutGrid, Layers, Info, Hash, Type, Heart
+  Dumbbell, Clock, Activity, Plus, Minus, Sparkles, X,
+  Loader2, Search, Filter, ChevronDown, Edit3,
+  Save, Trash2, Calendar, LayoutGrid, Layers, Info, Hash, Type, Heart, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+function CustomSelect({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const update = () => {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => { window.removeEventListener('scroll', update, true); window.removeEventListener('resize', update); };
+  }, [open]);
+
+  const selected = options.find(o => o.value === value);
+  return (
+    <div ref={btnRef}>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full p-4 rounded-2xl liquid-input text-sm font-medium outline-none cursor-pointer flex items-center justify-between gap-2 text-slate-800 dark:text-white hover:bg-white/50 dark:hover:bg-white/10 transition-colors">
+        <span className="truncate">{selected?.label || placeholder || 'Select...'}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}>
+          <motion.div initial={{ opacity: 0, y: -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.15 }}
+            className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 dark:border-white/10 overflow-hidden">
+            {options.map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`w-full px-4 py-2.5 text-left text-sm font-medium transition-colors flex items-center justify-between
+                  ${value === opt.value
+                    ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'}`}>
+                <span>{opt.label}</span>
+                {value === opt.value && <CheckCircle2 className="w-3.5 h-3.5 text-brand-500" />}
+              </button>
+            ))}
+          </motion.div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 // Helper: build an exercisesMap lookup from an array of exercises
 const buildExerciseMap = (exercisesArr) => {
@@ -72,7 +132,6 @@ export default function Workouts() {
   const [showPlanFilters, setShowPlanFilters] = useState(false);
   const [showWorkoutFilters, setShowWorkoutFilters] = useState(false);
   const [filterBodyPart, setFilterBodyPart] = useState('ALL');
-  const [filterAdvancement, setFilterAdvancement] = useState('ALL');
   const [filterMaxTime, setFilterMaxTime] = useState(120);
   const [filterTrainingType, setFilterTrainingType] = useState('ALL');
   const [planFilterFrequency, setPlanFilterFrequency] = useState('ALL');
@@ -542,11 +601,10 @@ export default function Workouts() {
       if (workoutSearchQuery && !t.name.toLowerCase().includes(workoutSearchQuery.toLowerCase())) return false;
       if (t.est_time / 60 > filterMaxTime) return false;
       if (filterBodyPart !== 'ALL' && !t.exercises.some(ex => ex._exerciseDetails?.body_part === filterBodyPart)) return false;
-      if (filterAdvancement !== 'ALL' && !t.exercises.some(ex => ex._exerciseDetails?.advancement === filterAdvancement)) return false;
       if (filterTrainingType !== 'ALL' && t.training_type !== filterTrainingType) return false;
       return true;
     });
-  }, [trainings, workoutSearchQuery, filterMaxTime, filterBodyPart, filterAdvancement, filterTrainingType]);
+  }, [trainings, workoutSearchQuery, filterMaxTime, filterBodyPart, filterTrainingType]);
 
   const filteredPlans = useMemo(() => {
     return plans.filter(p => {
@@ -723,18 +781,6 @@ export default function Workouts() {
                         ))}
                       </div>
                     </div>
-                    {/* Advancement */}
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Award className="w-3 h-3" /> Advancement</label>
-                      <div className="flex flex-wrap gap-2">
-                        {['ALL', ...Object.values(Advancement)].map(adv => (
-                          <button key={adv} onClick={() => setFilterAdvancement(adv)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${filterAdvancement === adv ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
-                            {adv === 'ALL' ? 'All' : adv}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                     {/* Max Duration */}
                     <div className="space-y-3">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between ml-1">
@@ -818,13 +864,8 @@ export default function Workouts() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-1.5"><Layers className="w-3 h-3 text-brand-500" /> Category</label>
-                    <div className="relative">
-                      <select value={newTraining.training_type} onChange={e => setNewTraining({...newTraining, training_type: e.target.value})}
-                        className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
-                        {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                    </div>
+                    <CustomSelect value={newTraining.training_type} onChange={(v) => setNewTraining({...newTraining, training_type: v})}
+                      options={Object.values(TrainingType).map(t => ({ value: t, label: t.replace('_', ' ') }))} />
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -850,12 +891,19 @@ export default function Workouts() {
                           {ex.sets.map((set, setIdx) => (
                             <div key={setIdx} className="flex gap-2 items-center bg-white/60 dark:bg-black/20 p-2 rounded-2xl border border-white/40 dark:border-white/5 group/set">
                               <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400">{setIdx + 1}</div>
-                              <input type="number" value={set.volume} onChange={e => handleUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value))}
-                                className="w-14 p-2 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
-                              <select value={set.units} onChange={e => handleUpdateSet(exIdx, setIdx, 'units', e.target.value)}
-                                className="flex-1 p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer">
-                                {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                              </select>
+                              <button type="button" onClick={() => handleUpdateSet(exIdx, setIdx, 'volume', Math.max(1, (set.volume || 1) - 1))}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                              <input type="text" inputMode="numeric" value={set.volume} onChange={e => handleUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value) || 0)}
+                                className="w-10 p-1 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
+                              <button type="button" onClick={() => handleUpdateSet(exIdx, setIdx, 'volume', (set.volume || 0) + 1)}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                              <div className="relative flex-1">
+                                <select value={set.units} onChange={e => handleUpdateSet(exIdx, setIdx, 'units', e.target.value)}
+                                  className="w-full p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer appearance-none pr-6">
+                                  {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                                <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                              </div>
                               <button onClick={() => handleRemoveSet(exIdx, setIdx)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/set:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
                             </div>
                           ))}
@@ -1162,17 +1210,21 @@ export default function Workouts() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Type</label>
-                    <select value={editingTraining.training_type} onChange={e => setEditingTraining({...editingTraining, training_type: e.target.value})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
-                      {Object.values(TrainingType).map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                    </select>
+                    <CustomSelect value={editingTraining.training_type} onChange={(v) => setEditingTraining({...editingTraining, training_type: v})}
+                      options={Object.values(TrainingType).map(t => ({ value: t, label: t.replace('_', ' ') }))} />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
-                    <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium" />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setEditingTraining(prev => ({...prev, est_time: Math.max(60, prev.est_time - 60)}))}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-4 h-4" /></button>
+                      <input type="text" inputMode="numeric" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: (parseInt(e.target.value) || 1) * 60})}
+                        className="flex-1 p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none font-medium text-center" />
+                      <button type="button" onClick={() => setEditingTraining(prev => ({...prev, est_time: prev.est_time + 60}))}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl liquid-input text-slate-500 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1203,12 +1255,19 @@ export default function Workouts() {
                         {ex.sets.map((set, setIdx) => (
                           <div key={setIdx} className="flex gap-2 items-center bg-white/60 dark:bg-black/20 p-2 rounded-2xl border border-white/40 dark:border-white/5 group/set">
                             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400">{setIdx + 1}</div>
-                            <input type="number" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value))}
-                              className="w-14 p-2 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
-                            <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
-                              className="flex-1 p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer">
-                              {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
-                            </select>
+                            <button type="button" onClick={() => handleEditUpdateSet(exIdx, setIdx, 'volume', Math.max(1, (set.volume || 1) - 1))}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                            <input type="text" inputMode="numeric" value={set.volume} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'volume', parseInt(e.target.value) || 0)}
+                              className="w-10 p-1 bg-transparent text-center text-sm font-bold text-slate-800 dark:text-white focus:outline-none" />
+                            <button type="button" onClick={() => handleEditUpdateSet(exIdx, setIdx, 'volume', (set.volume || 0) + 1)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                            <div className="relative flex-1">
+                              <select value={set.units} onChange={e => handleEditUpdateSet(exIdx, setIdx, 'units', e.target.value)}
+                                className="w-full p-2 bg-transparent text-[10px] font-bold text-slate-500 dark:text-slate-400 outline-none cursor-pointer appearance-none pr-6">
+                                {Object.values(SetUnit).map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                            </div>
                             <button onClick={() => handleEditRemoveSet(exIdx, setIdx)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover/set:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
                           </div>
                         ))}
@@ -1220,9 +1279,17 @@ export default function Workouts() {
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <div className="flex items-center gap-2">
                           <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Rest (s)</label>
-                          <input type="number" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
-                            const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
-                          })} className="w-20 p-2 liquid-input rounded-xl text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                          <div className="flex items-center gap-1">
+                            <button type="button" onClick={() => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: Math.max(0, (exercises[exIdx].rest_between_sets || 0) - 5) }; return { ...prev, exercises };
+                            })} className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Minus className="w-3 h-3" /></button>
+                            <input type="text" inputMode="numeric" value={ex.rest_between_sets || 0} onChange={e => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: parseInt(e.target.value) || 0 }; return { ...prev, exercises };
+                            })} className="w-12 p-1 bg-transparent text-sm text-slate-800 dark:text-white outline-none text-center font-medium" />
+                            <button type="button" onClick={() => setEditingTraining(prev => {
+                              const exercises = [...prev.exercises]; exercises[exIdx] = { ...exercises[exIdx], rest_between_sets: (exercises[exIdx].rest_between_sets || 0) + 5 }; return { ...prev, exercises };
+                            })} className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-brand-500 hover:bg-brand-500/10 transition-colors shrink-0"><Plus className="w-3 h-3" /></button>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <label className="text-[10px] font-bold text-slate-400 whitespace-nowrap">Notes</label>

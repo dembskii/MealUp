@@ -117,20 +117,47 @@ body {
   100% { transform: translate(50px, 50px) scale(1.1); }
 }
 
+/* --- Hide default number input spinners --- */
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* --- Fix select/option colors in dark mode --- */
+
+select option {
+  background-color: #fff;
+  color: #1e293b;
+}
+.dark select option {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
 /* --- Custom Scrollbar --- */
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
-  border-radius: 4px;
-  backdrop-filter: blur(4px);
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.7);
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
 }

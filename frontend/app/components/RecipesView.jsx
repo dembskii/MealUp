@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import { useState, useEffect, useMemo, useRef } from 'react';import { createPortal } from "react-dom";import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
 import RecipeCreator from './Recipe/RecipeCreator';
-import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2, Utensils } from 'lucide-react';
+import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2, Utensils, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { likeRecipe as userLikeRecipe, unlikeRecipe as userUnlikeRecipe, checkRecipesLikedBulk, batchGetDisplayNames } from '../services/userService';
 
@@ -14,6 +13,65 @@ const api = axios.create({
 });
 
 const authApi = axios.create({ baseURL: ENDPOINTS.AUTH, withCredentials: true });
+
+function CustomSelect({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !btnRef.current) return;
+    const update = () => {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => { window.removeEventListener('scroll', update, true); window.removeEventListener('resize', update); };
+  }, [open]);
+
+  const selected = options.find(o => o.value === value);
+  return (
+    <div ref={btnRef}>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full p-3 rounded-xl liquid-input text-sm font-medium outline-none cursor-pointer flex items-center justify-between gap-2 text-slate-800 dark:text-white hover:bg-white/50 dark:hover:bg-white/10 transition-colors">
+        <span className="truncate">{selected?.label || placeholder || 'Select...'}</span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}>
+          <motion.div initial={{ opacity: 0, y: -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.15 }}
+            className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-xl border border-white/50 dark:border-white/10 overflow-hidden">
+            {options.map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={`w-full px-4 py-2.5 text-left text-sm font-medium transition-colors flex items-center justify-between
+                  ${value === opt.value
+                    ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'}`}>
+                <span>{opt.label}</span>
+                {value === opt.value && <CheckCircle2 className="w-3.5 h-3.5 text-brand-500" />}
+              </button>
+            ))}
+          </motion.div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
 
 export default function Recipes() {
   const [recipes, setRecipes] = useState([]);
@@ -254,51 +312,51 @@ export default function Recipes() {
 
         <AnimatePresence>
           {showFilters && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              <div className="glass-panel rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+              <div className="glass-panel rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2 relative z-20">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Prep Time</label>
-                  <select value={filters.time} onChange={(e) => setFilters({...filters, time: e.target.value})}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-                    <option value="All">Any Time</option>
-                    <option value="15">Under 15 min</option>
-                    <option value="30">Under 30 min</option>
-                    <option value="60">Under 60 min</option>
-                    <option value="120">Under 2 hours</option>
-                  </select>
+                  <CustomSelect value={filters.time} onChange={(v) => setFilters({...filters, time: v})}
+                    options={[
+                      { value: 'All', label: 'Any Time' },
+                      { value: '15', label: 'Under 15 min' },
+                      { value: '30', label: 'Under 30 min' },
+                      { value: '60', label: 'Under 60 min' },
+                      { value: '120', label: 'Under 2 hours' },
+                    ]} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Calories / 100g</label>
-                  <select value={filters.maxCalories} onChange={(e) => setFilters({...filters, maxCalories: e.target.value})}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-                    <option value="All">Any</option>
-                    <option value="100">Under 100 kcal</option>
-                    <option value="200">Under 200 kcal</option>
-                    <option value="300">Under 300 kcal</option>
-                    <option value="500">Under 500 kcal</option>
-                  </select>
+                  <CustomSelect value={filters.maxCalories} onChange={(v) => setFilters({...filters, maxCalories: v})}
+                    options={[
+                      { value: 'All', label: 'Any' },
+                      { value: '100', label: 'Under 100 kcal' },
+                      { value: '200', label: 'Under 200 kcal' },
+                      { value: '300', label: 'Under 300 kcal' },
+                      { value: '500', label: 'Under 500 kcal' },
+                    ]} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Min Protein / 100g</label>
-                  <select value={filters.minProtein} onChange={(e) => setFilters({...filters, minProtein: e.target.value})}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-                    <option value="All">Any</option>
-                    <option value="10">10g+</option>
-                    <option value="20">20g+</option>
-                    <option value="30">30g+</option>
-                    <option value="40">40g+</option>
-                  </select>
+                  <CustomSelect value={filters.minProtein} onChange={(v) => setFilters({...filters, minProtein: v})}
+                    options={[
+                      { value: 'All', label: 'Any' },
+                      { value: '10', label: '10g+' },
+                      { value: '20', label: '20g+' },
+                      { value: '30', label: '30g+' },
+                      { value: '40', label: '40g+' },
+                    ]} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Sort By</label>
-                  <select value={filters.sort} onChange={(e) => setFilters({...filters, sort: e.target.value})}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-                    <option value="newest">Newest</option>
-                    <option value="popular">Most Popular</option>
-                    <option value="fastest">Fastest</option>
-                    <option value="calories_low">Lowest Calories</option>
-                    <option value="protein_high">Highest Protein</option>
-                  </select>
+                  <CustomSelect value={filters.sort} onChange={(v) => setFilters({...filters, sort: v})}
+                    options={[
+                      { value: 'newest', label: 'Newest' },
+                      { value: 'popular', label: 'Most Popular' },
+                      { value: 'fastest', label: 'Fastest' },
+                      { value: 'calories_low', label: 'Lowest Calories' },
+                      { value: 'protein_high', label: 'Highest Protein' },
+                    ]} />
                 </div>
               </div>
             </motion.div>
