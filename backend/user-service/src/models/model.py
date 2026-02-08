@@ -244,3 +244,48 @@ class LikedWorkout(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint('user_id', 'workout_id', name='uq_user_workout_like'),
     )
+
+
+class LikedRecipe(SQLModel, table=True):
+    """Tracks which users liked which recipes"""
+    __tablename__ = "liked_recipes"
+
+    id: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            primary_key=True,
+            default=uuid.uuid4
+        )
+    )
+
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            index=True
+        ),
+        description="User UID who liked the recipe"
+    )
+
+    recipe_id: str = Field(
+        sa_column=Column(
+            pg.VARCHAR(255),
+            nullable=False,
+            index=True
+        ),
+        description="Recipe ID from MongoDB recipe-service"
+    )
+
+    created_at: datetime = Field(
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'recipe_id', name='uq_user_recipe_like'),
+    )

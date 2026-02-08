@@ -26,8 +26,9 @@ class WorkoutPlanService:
         collection = db[settings.WORKOUT_PLANS_COLLECTION]
 
         if plan_data.trainings:
-            trainings = await TrainingService.get_trainings_by_ids(plan_data.trainings)
-            if len(trainings) != len(plan_data.trainings):
+            unique_ids = list(set(plan_data.trainings))
+            trainings = await TrainingService.get_trainings_by_ids(unique_ids)
+            if len(trainings) != len(unique_ids):
                 raise ValueError("One or more training IDs are invalid")
 
         workout_plan = WorkoutPlan(
@@ -112,8 +113,9 @@ class WorkoutPlanService:
             raise PermissionError("Only the plan creator can update it")
         
         if plan_update.trainings:
-            trainings = await TrainingService.get_trainings_by_ids(plan_update.trainings)
-            if len(trainings) != len(plan_update.trainings):
+            unique_ids = list(set(plan_update.trainings))
+            trainings = await TrainingService.get_trainings_by_ids(unique_ids)
+            if len(trainings) != len(unique_ids):
                 raise ValueError("One or more training IDs are invalid")
         
         update_data = plan_update.model_dump(exclude_unset=True)

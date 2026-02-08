@@ -599,6 +599,7 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
   const menuRef = useRef(null);
 
   const isOwner = currentUserId && post.author_id === currentUserId;
+  const hasLikes = (post.likes || 0) > 0;
 
   // Sync isLiked prop to local state when it changes (after API check)
   useEffect(() => {
@@ -677,7 +678,7 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
             </div>
           </div>
         </div>
-        {isOwner && (
+        {isOwner && !hasLikes && (
           <div className="relative" ref={menuRef}>
             <button onClick={() => setShowMenu(!showMenu)} className="text-slate-300 hover:text-slate-500 transition-colors p-1">
               <MoreHorizontal className="w-5 h-5" />

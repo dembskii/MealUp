@@ -14,6 +14,7 @@ import {
 } from '../services/workoutService';
 import {
   getLikedWorkouts, unlikeWorkout,
+  getLikedRecipes, unlikeRecipe,
 } from '../services/userService';
 import { TrainingType, SetUnit, BodyPart, Advancement } from '../data/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -57,6 +58,8 @@ export default function Profile() {
   const [allExercises, setAllExercises] = useState([]);
   const [likedTrainings, setLikedTrainings] = useState([]);
   const [unlikingInProgress, setUnlikingInProgress] = useState(new Set());
+  const [likedRecipes, setLikedRecipes] = useState([]);
+  const [unlikingRecipeInProgress, setUnlikingRecipeInProgress] = useState(new Set());
 
   // Search & filter state for profile tabs
   const [planSearchQuery, setPlanSearchQuery] = useState('');
@@ -160,6 +163,26 @@ export default function Profile() {
 
 
       setAllIngredients(ingredientsRes.data);
+
+      // Fetch liked recipes
+      const uid0 = auth.internal_uid || profile?.uid;
+      if (uid0) {
+        try {
+          const likedRecipesRes = await getLikedRecipes(uid0, { limit: 500 });
+          const likedRecipeItems = likedRecipesRes.items || likedRecipesRes || [];
+          const likedRecipeIds = likedRecipeItems.map(item => item.recipe_id);
+          if (likedRecipeIds.length > 0) {
+            // Fetch all recipes (not just author's) to find liked ones
+            const allRecipesRes = await recipeApi.get('/', { params: { limit: 100 } });
+            const allRecipes = allRecipesRes.data || [];
+            const likedRecipesData = allRecipes.filter(r => likedRecipeIds.includes(r._id));
+            setLikedRecipes(likedRecipesData);
+          }
+        } catch (likedRecipeErr) {
+          console.warn('Could not fetch liked recipes:', likedRecipeErr);
+        }
+      }
+
       // 4. Fetch workout plans, trainings, and exercises (independently so one failure doesn't block others)
 
       setWorkoutsLoading(true);
@@ -340,6 +363,23 @@ export default function Profile() {
       console.error('Failed to unlike workout:', err);
     } finally {
       setUnlikingInProgress(prev => { const s = new Set(prev); s.delete(trainingId); return s; });
+    }
+  };
+
+  const handleUnlikeRecipe = async (e, recipeId) => {
+    e.stopPropagation();
+    const uid = authUser?.internal_uid || userProfile?.uid;
+    if (!uid || unlikingRecipeInProgress.has(recipeId)) return;
+    setUnlikingRecipeInProgress(prev => new Set(prev).add(recipeId));
+    try {
+      await unlikeRecipe(uid, recipeId);
+      setLikedRecipes(prev => prev.filter(r => r._id !== recipeId));
+      // Also decrement total_likes in recipe-service
+      try { await recipeApi.post(`/${recipeId}/unlike`); } catch {}
+    } catch (err) {
+      console.error('Failed to unlike recipe:', err);
+    } finally {
+      setUnlikingRecipeInProgress(prev => { const s = new Set(prev); s.delete(recipeId); return s; });
     }
   };
 
@@ -592,14 +632,6 @@ export default function Profile() {
           <img src={imageUrl} alt={recipe.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             onError={(e) => { e.target.src = 'https://picsum.photos/400/300?grayscale'; }} />
           <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
-          <div className="absolute top-3 right-3">
-            <button
-              onClick={(e) => { e.stopPropagation(); handleLike(recipe._id); }}
-              className="p-1.5 bg-white/30 backdrop-blur-md rounded-full shadow-sm border border-white/20 hover:bg-white/50 transition-colors"
-            >
-              <Heart className="w-3.5 h-3.5 text-white" />
-            </button>
-          </div>
           <div className="absolute bottom-3 left-3 flex gap-1">
             <span className="px-2 py-0.5 bg-black/40 backdrop-blur-md text-white text-[10px] font-medium rounded-full border border-white/20">
               {recipe.ingredients?.length || 0} ing.
@@ -725,6 +757,72 @@ export default function Profile() {
               ) : (
                 <p className="text-center text-slate-400 py-10">You haven&apos;t created any recipes yet.</p>
               )}
+
+              {/* LIKED RECIPES SECTION */}
+              <div className="mt-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
+                    <Heart className="w-5 h-5 text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Liked recipes</h3>
+                    <p className="text-xs text-slate-400">{likedRecipes.length} liked</p>
+                  </div>
+                </div>
+                {likedRecipes.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {likedRecipes.map(recipe => {
+                      const macros = calculateMacros(recipe);
+                      const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/400/300`;
+                      return (
+                        <motion.div key={`liked-recipe-${recipe._id}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
+                          onClick={() => setSelectedRecipe(recipe)}
+                          className="glass-panel rounded-3xl overflow-hidden group cursor-pointer flex flex-col h-full">
+                          <div className="relative h-40 overflow-hidden">
+                            <img src={imageUrl} alt={recipe.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                              onError={(e) => { e.target.src = 'https://picsum.photos/400/300?grayscale'; }} />
+                            <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+                            <div className="absolute top-3 right-3">
+                              <button
+                                onClick={(e) => handleUnlikeRecipe(e, recipe._id)}
+                                disabled={unlikingRecipeInProgress.has(recipe._id)}
+                                className={`p-1.5 bg-red-500/80 backdrop-blur-md rounded-full shadow-sm border border-red-400/30 hover:bg-red-600 transition-colors ${unlikingRecipeInProgress.has(recipe._id) ? 'opacity-50' : ''}`}
+                                title="Unlike"
+                              >
+                                <Heart className="w-3.5 h-3.5 text-white fill-current" />
+                              </button>
+                            </div>
+                            <div className="absolute bottom-3 left-3 flex gap-1">
+                              <span className="px-2 py-0.5 bg-black/40 backdrop-blur-md text-white text-[10px] font-medium rounded-full border border-white/20">
+                                {recipe.ingredients?.length || 0} ing.
+                              </span>
+                              {recipe.total_likes > 0 && (
+                                <span className="px-2 py-0.5 bg-black/40 backdrop-blur-md text-white text-[10px] font-medium rounded-full border border-white/20">
+                                  {recipe.total_likes} likes
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="p-4 flex-1">
+                            <h4 className="font-bold text-slate-800 dark:text-white text-sm mb-3 line-clamp-1">{recipe.name}</h4>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                              <div className="flex items-center gap-1"><Clock className="w-3 h-3 text-brand-500" /><span>{formatTime(recipe.time_to_prepare)}</span></div>
+                              <div className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-500" /><span>{macros.calories} kcal/100g</span></div>
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] text-slate-400">
+                              <span>P: {macros.protein}g</span>
+                              <span>C: {macros.carbs}g</span>
+                              <span>F: {macros.fat}g</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-center text-slate-400 py-10">You haven&apos;t liked any recipes yet.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -1427,12 +1525,16 @@ export default function Profile() {
                     onError={(e) => { e.target.src = 'https://picsum.photos/800/500?grayscale'; }} />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                   <div className="absolute top-6 right-6 flex gap-2">
+                    {myRecipes.some(r => r._id === selectedRecipe._id) && (
+                    <>
                     <button onClick={() => handleStartEditRecipe(selectedRecipe)} className="p-2 bg-brand-500/70 hover:bg-brand-500 text-white rounded-full transition-colors backdrop-blur-md border border-white/10" title="Edit recipe">
                       <Edit3 className="w-5 h-5" />
                     </button>
                     <button onClick={() => handleDelete(selectedRecipe._id)} className="p-2 bg-red-500/70 hover:bg-red-500 text-white rounded-full transition-colors backdrop-blur-md border border-white/10" title="Delete recipe">
                       <Trash2 className="w-5 h-5" />
                     </button>
+                    </>
+                    )}
                     <button onClick={() => setSelectedRecipe(null)} className="p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors backdrop-blur-md border border-white/10">
                       <X className="w-6 h-6" />
                     </button>
@@ -1466,7 +1568,7 @@ export default function Profile() {
                         <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
                         <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Likes</p>
                           <div className="flex items-center gap-1.5 justify-center">
-                            <button onClick={() => handleLike(selectedRecipe._id)} className="p-1.5 bg-rose-100 dark:bg-rose-900/30 rounded-full text-rose-500 hover:bg-rose-200 transition-colors"><Heart className="w-4 h-4" /></button>
+                            <div className="p-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-slate-400"><Heart className="w-4 h-4" /></div>
                             <span className="text-lg font-bold text-slate-800 dark:text-white">{selectedRecipe.total_likes || 0}</span>
                           </div>
                         </div>

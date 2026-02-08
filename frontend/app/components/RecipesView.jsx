@@ -4,13 +4,16 @@ import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
 import RecipeCreator from './Recipe/RecipeCreator';
-import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2, Utensils } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { likeRecipe as userLikeRecipe, unlikeRecipe as userUnlikeRecipe, checkRecipesLikedBulk, batchGetDisplayNames } from '../services/userService';
 
 const api = axios.create({
   baseURL: ENDPOINTS.RECIPES,
   withCredentials: true,
 });
+
+const authApi = axios.create({ baseURL: ENDPOINTS.AUTH, withCredentials: true });
 
 export default function Recipes() {
   const [recipes, setRecipes] = useState([]);
@@ -21,7 +24,13 @@ export default function Recipes() {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ time: 'All' });
+  const [filters, setFilters] = useState({ time: 'All', maxCalories: 'All', minProtein: 'All', sort: 'newest' });
+
+  // Per-user like tracking
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [likedRecipeIds, setLikedRecipeIds] = useState(new Set());
+  const [likingInProgress, setLikingInProgress] = useState(new Set());
+  const [authorNames, setAuthorNames] = useState({});
 
   useEffect(() => {
     fetchData();
@@ -41,6 +50,35 @@ export default function Recipes() {
         map[ing.id || ing._id] = ing;
       });
       setIngredientMap(map);
+
+      // Resolve author names
+      try {
+        const authorIds = [...new Set(recipesRes.data.map(r => r.author_id).filter(Boolean))];
+        if (authorIds.length > 0) {
+          const namesMap = await batchGetDisplayNames(authorIds);
+          const namesObj = {};
+          namesMap.forEach((name, uid) => { namesObj[uid] = name; });
+          setAuthorNames(namesObj);
+        }
+      } catch (e) {
+        console.warn('Could not fetch author names:', e);
+      }
+
+      // Get current user and check liked recipes
+      try {
+        const authRes = await authApi.get('/me');
+        const uid = authRes.data?.internal_uid;
+        if (uid) {
+          setCurrentUserId(uid);
+          const ids = recipesRes.data.map(r => r._id).filter(Boolean);
+          if (ids.length > 0) {
+            const { results } = await checkRecipesLikedBulk(uid, ids);
+            setLikedRecipeIds(new Set(Object.entries(results).filter(([, v]) => v).map(([k]) => k)));
+          }
+        }
+      } catch (authErr) {
+        console.warn('Could not check liked recipes:', authErr);
+      }
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err.response?.data?.detail || err.message);
@@ -99,38 +137,28 @@ export default function Recipes() {
     return ingredientMap[ingredientId]?.name || 'Unknown';
   };
 
-  const handleLike = async (e, recipeId) => {
+  const handleToggleLike = async (e, recipeId) => {
     e.stopPropagation();
+    const recipe = recipes.find(r => r._id === recipeId);
+    if (!currentUserId || likingInProgress.has(recipeId) || recipe?.author_id === currentUserId) return;
+    setLikingInProgress(prev => new Set(prev).add(recipeId));
     try {
-      const { data } = await api.post(`/${recipeId}/like`);
-      setRecipes(prev => prev.map(r => (r._id === recipeId ? data : r)));
-      if (selectedRecipe?._id === recipeId) setSelectedRecipe(data);
+      const isLiked = likedRecipeIds.has(recipeId);
+      if (isLiked) {
+        await userUnlikeRecipe(currentUserId, recipeId);
+        setLikedRecipeIds(prev => { const s = new Set(prev); s.delete(recipeId); return s; });
+        // Decrement total_likes in recipe-service
+        try { const { data } = await api.post(`/${recipeId}/unlike`); setRecipes(prev => prev.map(r => r._id === recipeId ? data : r)); if (selectedRecipe?._id === recipeId) setSelectedRecipe(data); } catch {}
+      } else {
+        await userLikeRecipe(currentUserId, recipeId);
+        setLikedRecipeIds(prev => new Set(prev).add(recipeId));
+        // Increment total_likes in recipe-service
+        try { const { data } = await api.post(`/${recipeId}/like`); setRecipes(prev => prev.map(r => r._id === recipeId ? data : r)); if (selectedRecipe?._id === recipeId) setSelectedRecipe(data); } catch {}
+      }
     } catch (err) {
-      console.error('Error liking recipe:', err);
-    }
-  };
-
-  const handleUnlike = async (e, recipeId) => {
-    e.stopPropagation();
-    try {
-      const { data } = await api.post(`/${recipeId}/unlike`);
-      setRecipes(prev => prev.map(r => (r._id === recipeId ? data : r)));
-      if (selectedRecipe?._id === recipeId) setSelectedRecipe(data);
-    } catch (err) {
-      console.error('Error unliking recipe:', err);
-    }
-  };
-
-  const handleDelete = async (e, recipeId) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this recipe?')) return;
-    try {
-      await api.delete(`/${recipeId}`);
-      setRecipes(prev => prev.filter(r => r._id !== recipeId));
-      if (selectedRecipe?._id === recipeId) setSelectedRecipe(null);
-    } catch (err) {
-      console.error('Error deleting recipe:', err);
-      alert(err.response?.data?.detail || 'Failed to delete recipe.');
+      console.error('Error toggling recipe like:', err);
+    } finally {
+      setLikingInProgress(prev => { const s = new Set(prev); s.delete(recipeId); return s; });
     }
   };
 
@@ -139,16 +167,39 @@ export default function Recipes() {
   };
 
   const getFilteredRecipes = () => {
-    return recipes.filter(recipe => {
+    let filtered = recipes.filter(recipe => {
       const matchesSearch = recipe.name?.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
       if (filters.time !== 'All') {
         const limitSeconds = parseInt(filters.time) * 60;
         if (!recipe.time_to_prepare || recipe.time_to_prepare > limitSeconds) return false;
       }
+      if (filters.maxCalories !== 'All') {
+        const macros = calculateMacros(recipe);
+        if (macros.calories > parseInt(filters.maxCalories)) return false;
+      }
+      if (filters.minProtein !== 'All') {
+        const macros = calculateMacros(recipe);
+        if (macros.protein < parseInt(filters.minProtein)) return false;
+      }
       return true;
     });
+    // Sort
+    if (filters.sort === 'newest') {
+      filtered.sort((a, b) => new Date(b._created_at || 0) - new Date(a._created_at || 0));
+    } else if (filters.sort === 'popular') {
+      filtered.sort((a, b) => (b.total_likes || 0) - (a.total_likes || 0));
+    } else if (filters.sort === 'fastest') {
+      filtered.sort((a, b) => (a.time_to_prepare || 9999) - (b.time_to_prepare || 9999));
+    } else if (filters.sort === 'calories_low') {
+      filtered.sort((a, b) => calculateMacros(a).calories - calculateMacros(b).calories);
+    } else if (filters.sort === 'protein_high') {
+      filtered.sort((a, b) => calculateMacros(b).protein - calculateMacros(a).protein);
+    }
+    return filtered;
   };
+
+  const activeFilterCount = [filters.time, filters.maxCalories, filters.minProtein].filter(v => v !== 'All').length;
 
   const filteredRecipes = getFilteredRecipes();
 
@@ -196,7 +247,7 @@ export default function Recipes() {
             <button onClick={() => setShowFilters(!showFilters)}
               className={`px-4 py-3 rounded-2xl flex items-center gap-2 font-semibold transition-all liquid-btn ${showFilters ? 'bg-slate-800 text-white shadow-lg' : 'liquid-btn-secondary'}`}>
               <Filter className="w-4 h-4" /><span>Filters</span>
-              {filters.time !== 'All' && (<span className="w-2 h-2 rounded-full bg-brand-500"></span>)}
+              {activeFilterCount > 0 && (<span className="min-w-[18px] h-[18px] rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">{activeFilterCount}</span>)}
             </button>
           </div>
         </div>
@@ -204,7 +255,7 @@ export default function Recipes() {
         <AnimatePresence>
           {showFilters && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              <div className="glass-panel rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+              <div className="glass-panel rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Prep Time</label>
                   <select value={filters.time} onChange={(e) => setFilters({...filters, time: e.target.value})}
@@ -214,6 +265,39 @@ export default function Recipes() {
                     <option value="30">Under 30 min</option>
                     <option value="60">Under 60 min</option>
                     <option value="120">Under 2 hours</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Max Calories / 100g</label>
+                  <select value={filters.maxCalories} onChange={(e) => setFilters({...filters, maxCalories: e.target.value})}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <option value="All">Any</option>
+                    <option value="100">Under 100 kcal</option>
+                    <option value="200">Under 200 kcal</option>
+                    <option value="300">Under 300 kcal</option>
+                    <option value="500">Under 500 kcal</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Min Protein / 100g</label>
+                  <select value={filters.minProtein} onChange={(e) => setFilters({...filters, minProtein: e.target.value})}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <option value="All">Any</option>
+                    <option value="10">10g+</option>
+                    <option value="20">20g+</option>
+                    <option value="30">30g+</option>
+                    <option value="40">40g+</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide ml-1">Sort By</label>
+                  <select value={filters.sort} onChange={(e) => setFilters({...filters, sort: e.target.value})}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                    <option value="newest">Newest</option>
+                    <option value="popular">Most Popular</option>
+                    <option value="fastest">Fastest</option>
+                    <option value="calories_low">Lowest Calories</option>
+                    <option value="protein_high">Highest Protein</option>
                   </select>
                 </div>
               </div>
@@ -238,11 +322,21 @@ export default function Recipes() {
                       onError={(e) => { e.target.src = 'https://picsum.photos/400/300?grayscale'; }} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
                     <div className="absolute top-4 right-4 flex gap-2">
-                      <button onClick={(e) => handleLike(e, recipe._id)}
-                        className="p-2.5 bg-white/20 backdrop-blur-md rounded-full shadow-lg border border-white/30 hover:bg-white/40 transition-colors flex items-center gap-1">
-                        <Heart className="w-4 h-4 text-white" />
+                      {recipe.author_id !== currentUserId && (
+                      <button onClick={(e) => handleToggleLike(e, recipe._id)}
+                        disabled={likingInProgress.has(recipe._id)}
+                        className={`p-2.5 backdrop-blur-md rounded-full shadow-lg border transition-colors flex items-center gap-1 ${likedRecipeIds.has(recipe._id) ? 'bg-red-500/80 border-red-400/50 hover:bg-red-500' : 'bg-white/20 border-white/30 hover:bg-white/40'} ${likingInProgress.has(recipe._id) ? 'opacity-50' : ''}`}
+                        title={likedRecipeIds.has(recipe._id) ? 'Unlike' : 'Like recipe'}>
+                        <Heart className={`w-4 h-4 text-white ${likedRecipeIds.has(recipe._id) ? 'fill-current' : ''}`} />
                         {recipe.total_likes > 0 && <span className="text-white text-xs font-bold">{recipe.total_likes}</span>}
                       </button>
+                      )}
+                      {recipe.author_id === currentUserId && recipe.total_likes > 0 && (
+                        <div className="p-2.5 backdrop-blur-md rounded-full shadow-lg border bg-white/20 border-white/30 flex items-center gap-1">
+                          <Heart className="w-4 h-4 text-white" />
+                          <span className="text-white text-xs font-bold">{recipe.total_likes}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="absolute bottom-4 left-4 flex gap-2">
                       <span className="px-3 py-1 bg-white/20 backdrop-blur-md text-white text-xs font-bold rounded-full border border-white/20 shadow-sm">
@@ -308,7 +402,7 @@ export default function Recipes() {
                     </motion.div>
                     <h2 className="text-3xl md:text-4xl font-bold leading-tight drop-shadow-lg mb-2">{selectedRecipe.name}</h2>
                     <div className="flex items-center gap-3 text-white/70 text-sm">
-                      <span>By {selectedRecipe.author_id}</span>
+                      <span>By {authorNames[selectedRecipe.author_id] || selectedRecipe.author_id?.slice(0, 8) || 'Unknown'}</span>
                       {selectedRecipe._created_at && <span>• {new Date(selectedRecipe._created_at).toLocaleDateString()}</span>}
                     </div>
                   </div>
@@ -327,7 +421,17 @@ export default function Recipes() {
                         <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
                         <div className="text-center"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Likes</p>
                           <div className="flex items-center gap-1.5 justify-center">
-                            <button onClick={(e) => handleLike(e, selectedRecipe._id)} className="p-1.5 bg-rose-100 dark:bg-rose-900/30 rounded-full text-rose-500 hover:bg-rose-200 transition-colors"><Heart className="w-4 h-4" /></button>
+                            {selectedRecipe.author_id !== currentUserId ? (
+                            <button onClick={(e) => handleToggleLike(e, selectedRecipe._id)}
+                              disabled={likingInProgress.has(selectedRecipe._id)}
+                              className={`p-1.5 rounded-full transition-colors ${likedRecipeIds.has(selectedRecipe._id) ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-rose-100 dark:bg-rose-900/30 text-rose-500 hover:bg-rose-200'} ${likingInProgress.has(selectedRecipe._id) ? 'opacity-50' : ''}`}>
+                              <Heart className={`w-4 h-4 ${likedRecipeIds.has(selectedRecipe._id) ? 'fill-current' : ''}`} />
+                            </button>
+                            ) : (
+                            <div className="p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
+                              <Heart className="w-4 h-4" />
+                            </div>
+                            )}
                             <span className="text-lg font-bold text-slate-800 dark:text-white">{selectedRecipe.total_likes || 0}</span>
                           </div>
                         </div>

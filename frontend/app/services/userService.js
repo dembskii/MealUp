@@ -154,3 +154,76 @@ export async function checkWorkoutsLikedBulk(uid, workoutIds) {
   }
   return res.json();
 }
+
+// ======================== LIKED RECIPES ========================
+
+/**
+ * Like a recipe for a user.
+ * POST /user/users/{uid}/liked-recipes
+ */
+export async function likeRecipe(uid, recipeId) {
+  const res = await fetch(`${ENDPOINTS.USERS}/users/${uid}/liked-recipes`, {
+    ...defaultOpts,
+    method: 'POST',
+    body: JSON.stringify({ recipe_id: recipeId }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Like recipe failed ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Unlike a recipe for a user.
+ * DELETE /user/users/{uid}/liked-recipes/{recipe_id}
+ */
+export async function unlikeRecipe(uid, recipeId) {
+  const res = await fetch(`${ENDPOINTS.USERS}/users/${uid}/liked-recipes/${recipeId}`, {
+    ...defaultOpts,
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Unlike recipe failed ${res.status}: ${text}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+/**
+ * Get all liked recipes for a user (paginated).
+ * GET /user/users/{uid}/liked-recipes
+ * Returns { total, items: [{ id, user_id, recipe_id, created_at }] }
+ */
+export async function getLikedRecipes(uid, { skip = 0, limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  params.set('skip', skip);
+  params.set('limit', limit);
+  const res = await fetch(`${ENDPOINTS.USERS}/users/${uid}/liked-recipes?${params}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Get liked recipes failed ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Bulk check like status for multiple recipes.
+ * POST /user/users/{uid}/liked-recipes/check-bulk
+ * Returns { results: { [recipe_id]: boolean } }
+ */
+export async function checkRecipesLikedBulk(uid, recipeIds) {
+  const res = await fetch(`${ENDPOINTS.USERS}/users/${uid}/liked-recipes/check-bulk`, {
+    ...defaultOpts,
+    method: 'POST',
+    body: JSON.stringify({ recipe_ids: recipeIds }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Bulk recipe like check failed ${res.status}: ${text}`);
+  }
+  return res.json();
+}

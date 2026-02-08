@@ -7,6 +7,8 @@ from src.validators.schema import (
     UserResponse, UserUpdate, UserListResponse, UserCreate,
     LikeWorkoutRequest, LikedWorkoutResponse, LikedWorkoutListResponse,
     WorkoutLikeStatusResponse, BulkLikeCheckRequest, BulkLikeCheckResponse,
+    LikeRecipeRequest, LikedRecipeResponse, LikedRecipeListResponse,
+    RecipeLikeStatusResponse, BulkRecipeLikeCheckRequest, BulkRecipeLikeCheckResponse,
 )
 from uuid import UUID
 from typing import Dict, Optional, List
@@ -336,3 +338,101 @@ async def search_liked_workouts(
     except Exception as e:
         logger.error(f"Error searching liked workouts: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to search liked workouts")
+
+
+# =================== Liked Recipes =================== #
+
+@router.post("/users/{uid}/liked-recipes", response_model=LikedRecipeResponse, status_code=201)
+async def like_recipe(
+    uid: UUID,
+    request: LikeRecipeRequest,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Like a recipe for a user"""
+    try:
+        success = await UserService.like_recipe(session, uid, request.recipe_id)
+        if not success:
+            raise HTTPException(status_code=409, detail="Recipe already liked")
+
+        # Fetch the created record
+        from src.models.model import LikedRecipe as LikedRecipeModel
+        from sqlmodel import select
+        statement = select(LikedRecipeModel).where(
+            LikedRecipeModel.user_id == uid,
+            LikedRecipeModel.recipe_id == request.recipe_id
+        )
+        result = await session.exec(statement)
+        record = result.first()
+        if not record:
+            raise HTTPException(status_code=500, detail="Failed to retrieve liked recipe")
+
+        return record
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error liking recipe: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to like recipe")
+
+
+@router.delete("/users/{uid}/liked-recipes/{recipe_id}", status_code=200)
+async def unlike_recipe(
+    uid: UUID,
+    recipe_id: str,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Unlike a recipe for a user"""
+    try:
+        success = await UserService.unlike_recipe(session, uid, recipe_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Recipe not liked")
+
+        return {"message": "Recipe unliked successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unliking recipe: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to unlike recipe")
+
+
+@router.post("/users/{uid}/liked-recipes/check-bulk", response_model=BulkRecipeLikeCheckResponse)
+async def check_recipes_liked_bulk(
+    uid: UUID,
+    request: BulkRecipeLikeCheckRequest,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check like status for multiple recipes at once"""
+    try:
+        results = {}
+        for recipe_id in request.recipe_ids:
+            results[recipe_id] = await UserService.is_recipe_liked(
+                session, uid, recipe_id
+            )
+        return BulkRecipeLikeCheckResponse(results=results)
+
+    except Exception as e:
+        logger.error(f"Error checking bulk recipe like status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to check like statuses")
+
+
+@router.get("/users/{uid}/liked-recipes", response_model=LikedRecipeListResponse)
+async def get_liked_recipes(
+    uid: UUID,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=500, description="Max number of records to return"),
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Get all liked recipes for a user with pagination"""
+    try:
+        recipes = await UserService.get_liked_recipes(session, uid, skip, limit)
+        total = await UserService.get_liked_recipes_count(session, uid)
+        return LikedRecipeListResponse(total=total, items=recipes)
+
+    except Exception as e:
+        logger.error(f"Error getting liked recipes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get liked recipes")
