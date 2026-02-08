@@ -1,9 +1,10 @@
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import SQLModel, Field, Column
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List
 from enum import Enum
 from pydantic import EmailStr
+from sqlalchemy import UniqueConstraint
 import uuid
 
 
@@ -198,3 +199,48 @@ class User(SQLModel, table = True):
 
 def __repr__(self):
     return f"<User {self.username} ({self.auth0_sub})>"
+
+
+class LikedWorkout(SQLModel, table=True):
+    """Tracks which users liked which workouts"""
+    __tablename__ = "liked_workouts"
+
+    id: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            primary_key=True,
+            default=uuid.uuid4
+        )
+    )
+
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            index=True
+        ),
+        description="User UID who liked the workout"
+    )
+
+    workout_id: str = Field(
+        sa_column=Column(
+            pg.VARCHAR(255),
+            nullable=False,
+            index=True
+        ),
+        description="Workout ID from MongoDB workout-service"
+    )
+
+    created_at: datetime = Field(
+        sa_column=Column(
+            pg.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc)
+        ),
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'workout_id', name='uq_user_workout_like'),
+    )

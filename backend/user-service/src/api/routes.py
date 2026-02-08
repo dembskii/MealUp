@@ -3,9 +3,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.main import get_session
 from src.models.model import User
 from src.services.user_service import UserService
-from src.validators.schema import UserResponse, UserUpdate, UserListResponse, UserCreate
+from src.validators.schema import (
+    UserResponse, UserUpdate, UserListResponse, UserCreate,
+    LikeWorkoutRequest, LikedWorkoutResponse, LikedWorkoutListResponse,
+    WorkoutLikeStatusResponse, BulkLikeCheckRequest, BulkLikeCheckResponse,
+)
 from uuid import UUID
-from typing import Dict
+from typing import Dict, Optional, List
 import logging
 
 from common.auth_guard import require_auth 
@@ -193,3 +197,142 @@ async def search_users(
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "user-service"}
+
+
+
+# =================== Liked Workouts =================== #
+
+@router.post("/users/{uid}/liked-workouts", response_model=LikedWorkoutResponse, status_code=201)
+async def like_workout(
+    uid: UUID,
+    request: LikeWorkoutRequest,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Like a workout for a user"""
+    try:
+        success = await UserService.like_workout(session, uid, request.workout_id)
+        if not success:
+            raise HTTPException(status_code=409, detail="Workout already liked")
+
+        workouts = await UserService.search_liked_workouts(
+            session, uid, workout_ids=[request.workout_id]
+        )
+        if not workouts:
+            raise HTTPException(status_code=500, detail="Failed to retrieve liked workout")
+
+        return workouts[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error liking workout: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to like workout")
+
+
+@router.delete("/users/{uid}/liked-workouts/{workout_id}", status_code=200)
+async def unlike_workout(
+    uid: UUID,
+    workout_id: str,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Unlike a workout for a user"""
+    try:
+        success = await UserService.unlike_workout(session, uid, workout_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Workout not liked")
+
+        return {"message": "Workout unliked successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unliking workout: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to unlike workout")
+
+
+@router.get("/users/{uid}/liked-workouts/check/{workout_id}", response_model=WorkoutLikeStatusResponse)
+async def check_workout_liked(
+    uid: UUID,
+    workout_id: str,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check if a specific workout is liked by a user"""
+    try:
+        is_liked = await UserService.is_workout_liked(session, uid, workout_id)
+        return WorkoutLikeStatusResponse(workout_id=workout_id, is_liked=is_liked)
+
+    except Exception as e:
+        logger.error(f"Error checking workout like status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to check like status")
+
+
+@router.post("/users/{uid}/liked-workouts/check-bulk", response_model=BulkLikeCheckResponse)
+async def check_workouts_liked_bulk(
+    uid: UUID,
+    request: BulkLikeCheckRequest,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check like status for multiple workouts at once"""
+    try:
+        results = {}
+        for workout_id in request.workout_ids:
+            results[workout_id] = await UserService.is_workout_liked(
+                session, uid, workout_id
+            )
+        return BulkLikeCheckResponse(results=results)
+
+    except Exception as e:
+        logger.error(f"Error checking bulk workout like status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to check like statuses")
+
+
+@router.get("/users/{uid}/liked-workouts", response_model=LikedWorkoutListResponse)
+async def get_liked_workouts(
+    uid: UUID,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Max number of records to return"),
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Get all liked workouts for a user with pagination"""
+    try:
+        workouts = await UserService.get_liked_workouts(session, uid, skip, limit)
+        total = await UserService.get_liked_workouts_count(session, uid)
+        return LikedWorkoutListResponse(total=total, items=workouts)
+
+    except Exception as e:
+        logger.error(f"Error getting liked workouts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get liked workouts")
+
+
+@router.get("/users/{uid}/liked-workouts/search", response_model=LikedWorkoutListResponse)
+async def search_liked_workouts(
+    uid: UUID,
+    workout_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated list of workout IDs to filter by"
+    ),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Max number of records to return"),
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Search and filter liked workouts for a user"""
+    try:
+        parsed_workout_ids = None
+        if workout_ids:
+            parsed_workout_ids = [wid.strip() for wid in workout_ids.split(",") if wid.strip()]
+
+        workouts = await UserService.search_liked_workouts(
+            session, uid, workout_ids=parsed_workout_ids, skip=skip, limit=limit
+        )
+        total = len(workouts)
+        return LikedWorkoutListResponse(total=total, items=workouts)
+
+    except Exception as e:
+        logger.error(f"Error searching liked workouts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search liked workouts")

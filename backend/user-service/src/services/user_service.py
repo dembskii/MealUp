@@ -1,8 +1,10 @@
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.models.model import User, UserRole
+from sqlalchemy import func
+from src.models.model import User, UserRole, LikedWorkout
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -181,4 +183,168 @@ class UserService:
             
         except Exception as e:
             logger.error(f"Error searching users: {str(e)}")
+            return []
+
+
+    # =================== Liked Workouts =================== #
+
+    @staticmethod
+    async def like_workout(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Like a workout. Returns False if already liked."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if existing:
+                logger.info(f"User {user_id} already liked workout {workout_id}")
+                return False
+
+            like = LikedWorkout(
+                user_id=user_id,
+                workout_id=workout_id,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(like)
+            await session.commit()
+
+            logger.info(f"User {user_id} liked workout {workout_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error liking workout: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def unlike_workout(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Unlike a workout. Returns False if not liked."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if not existing:
+                logger.info(f"User {user_id} has not liked workout {workout_id}")
+                return False
+
+            await session.delete(existing)
+            await session.commit()
+
+            logger.info(f"User {user_id} unliked workout {workout_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error unliking workout: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def is_workout_liked(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Check if a workout is liked by a user."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            return result.first() is not None
+
+        except Exception as e:
+            logger.error(f"Error checking liked workout: {str(e)}")
+            return False
+
+    @staticmethod
+    async def get_liked_workouts(
+        session: AsyncSession,
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[LikedWorkout]:
+        """Get all liked workouts for a user with pagination."""
+        try:
+            statement = (
+                select(LikedWorkout)
+                .where(LikedWorkout.user_id == user_id)
+                .order_by(LikedWorkout.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            return result.all()
+
+        except Exception as e:
+            logger.error(f"Error getting liked workouts: {str(e)}")
+            return []
+
+    @staticmethod
+    async def get_liked_workouts_count(
+        session: AsyncSession,
+        user_id: UUID
+    ) -> int:
+        """Get total count of liked workouts for a user."""
+        try:
+            statement = select(func.count(LikedWorkout.id)).where(
+                LikedWorkout.user_id == user_id
+            )
+            result = await session.exec(statement)
+            return result.first() or 0
+
+        except Exception as e:
+            logger.error(f"Error counting liked workouts: {str(e)}")
+            return 0
+
+    @staticmethod
+    async def search_liked_workouts(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_ids: Optional[List[str]] = None,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[LikedWorkout]:
+        """Search/filter liked workouts for a user.
+
+        Args:
+            workout_ids: Optional list of workout IDs to filter by
+        """
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id
+            )
+
+            if workout_ids:
+                statement = statement.where(
+                    LikedWorkout.workout_id.in_(workout_ids)
+                )
+
+            statement = (
+                statement
+                .order_by(LikedWorkout.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+
+            result = await session.exec(statement)
+            return result.all()
+
+        except Exception as e:
+            logger.error(f"Error searching liked workouts: {str(e)}")
             return []
