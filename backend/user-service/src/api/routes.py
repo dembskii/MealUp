@@ -294,7 +294,7 @@ async def check_workouts_liked_bulk(
 async def get_liked_workouts(
     uid: UUID,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(20, ge=1, le=100, description="Max number of records to return"),
+    limit: int = Query(20, ge=1, le=500, description="Max number of records to return"),
     session: AsyncSession = Depends(get_session),
     token_payload: Dict = Depends(require_auth)
 ):

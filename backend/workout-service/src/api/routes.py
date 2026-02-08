@@ -179,7 +179,6 @@ async def get_days_of_week():
 async def get_trainings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    day: Optional[DayOfWeek] = Query(None),
     training_type: Optional[TrainingType] = Query(None),
     search: Optional[str] = Query(None)
 ):
@@ -188,7 +187,6 @@ async def get_trainings(
         trainings = await TrainingService.get_trainings(
             skip=skip,
             limit=limit,
-            day=day,
             training_type=training_type,
             search=search
         )
@@ -221,10 +219,10 @@ async def get_training_with_exercises(training_id: str):
 
 
 @router.post("/trainings", response_model=TrainingResponse, status_code=201)
-async def create_training(training_data: TrainingCreate):
+async def create_training(training_data: TrainingCreate, x_user_id: Optional[str] = Header(None)):
     """Create a new training session"""
     try:
-        training = await TrainingService.create_training(training_data)
+        training = await TrainingService.create_training(training_data, creator_id=x_user_id)
         return training
     except ValueError as e:
         logger.error(f"Validation error creating training: {str(e)}")

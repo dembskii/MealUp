@@ -210,9 +210,9 @@ class Training(BaseModel):
     """Training session document stored in MongoDB"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), alias="_id", description="Unique training ID")
     name: str = Field(..., min_length=1, max_length=100, description="Training session name")
+    creator_id: Optional[str] = Field(None, description="User ID of the training creator")
     exercises: List[TrainingExercise] = Field(..., min_length=1, description="List of exercises in this training")
     est_time: int = Field(..., gt=0, description="Estimated time in seconds")
-    day: DayOfWeek = Field(..., description="Day of the week (ISO 8601: 1-7)")
     training_type: TrainingType = Field(..., description="Type of training session")
     description: Optional[str] = Field(None, max_length=500, description="Training description")
     created_at: datetime = Field(default_factory=datetime.utcnow, alias="_created_at")
@@ -235,7 +235,6 @@ class Training(BaseModel):
                     }
                 ],
                 "est_time": 3600,
-                "day": 1,
                 "training_type": "push"
             }
         }
@@ -247,7 +246,6 @@ class TrainingCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     exercises: List[TrainingExercise] = Field(..., min_length=1)
     est_time: int = Field(..., gt=0, description="Estimated time in seconds")
-    day: DayOfWeek
     training_type: TrainingType
     description: Optional[str] = Field(None, max_length=500)
 
@@ -257,7 +255,6 @@ class TrainingUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     exercises: Optional[List[TrainingExercise]] = None
     est_time: Optional[int] = Field(None, gt=0)
-    day: Optional[DayOfWeek] = None
     training_type: Optional[TrainingType] = None
     description: Optional[str] = Field(None, max_length=500)
 
@@ -266,9 +263,9 @@ class TrainingResponse(BaseModel):
     """Response schema for training session"""
     id: str = Field(alias="_id")
     name: str
+    creator_id: Optional[str] = None
     exercises: List[TrainingExercise]
     est_time: int
-    day: DayOfWeek
     training_type: TrainingType
     description: Optional[str] = None
     created_at: datetime = Field(alias="_created_at")
@@ -286,6 +283,7 @@ class WorkoutPlan(BaseModel):
     trainer_id: str = Field(..., description="User ID of the trainer/creator")
     clients: List[str] = Field(default=[], description="List of client user IDs")
     trainings: List[str] = Field(default=[], description="List of Training IDs")
+    schedule: Optional[dict] = Field(default=None, description="Weekly schedule mapping day numbers to training ID lists")
     description: Optional[str] = Field(None, max_length=1000, description="Plan description")
     is_public: bool = Field(default=False, description="Whether the plan is publicly visible")
     total_likes: int = Field(default=0, ge=0, description="Total number of likes")
@@ -314,6 +312,7 @@ class WorkoutPlanCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     clients: Optional[List[str]] = Field(default=[])
     trainings: Optional[List[str]] = Field(default=[])
+    schedule: Optional[dict] = Field(default=None)
     description: Optional[str] = Field(None, max_length=1000)
     is_public: bool = Field(default=False)
 
@@ -323,6 +322,7 @@ class WorkoutPlanUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     clients: Optional[List[str]] = None
     trainings: Optional[List[str]] = None
+    schedule: Optional[dict] = None
     description: Optional[str] = Field(None, max_length=1000)
     is_public: Optional[bool] = None
 
@@ -334,6 +334,7 @@ class WorkoutPlanResponse(BaseModel):
     trainer_id: str
     clients: List[str]
     trainings: List[str]
+    schedule: Optional[dict] = None
     description: Optional[str] = None
     is_public: bool
     total_likes: int
@@ -349,9 +350,9 @@ class TrainingWithExercises(BaseModel):
     """Training session with full exercise details"""
     id: str = Field(alias="_id")
     name: str
+    creator_id: Optional[str] = None
     exercises: List[dict]
     est_time: int
-    day: DayOfWeek
     training_type: TrainingType
     description: Optional[str] = None
     created_at: datetime = Field(alias="_created_at")

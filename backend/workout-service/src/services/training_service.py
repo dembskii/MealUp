@@ -5,7 +5,7 @@ import logging
 from src.db.mongodb import get_database
 from src.models.model import (
     Training, TrainingCreate, TrainingUpdate, TrainingResponse,
-    DayOfWeek, TrainingType, TrainingWithExercises
+    TrainingType, TrainingWithExercises
 )
 from src.core.config import settings
 from src.services.exercise_service import ExerciseService
@@ -17,7 +17,7 @@ class TrainingService:
     """Service for training session CRUD operations"""
     
     @staticmethod
-    async def create_training(training_data: TrainingCreate) -> Training:
+    async def create_training(training_data: TrainingCreate, creator_id: str = None) -> Training:
         """Create a new training session"""
         db = get_database()
         collection = db[settings.TRAININGS_COLLECTION]
@@ -29,9 +29,9 @@ class TrainingService:
 
         training = Training(
             name=training_data.name,
+            creator_id=creator_id,
             exercises=training_data.exercises,
             est_time=training_data.est_time,
-            day=training_data.day,
             training_type=training_data.training_type,
             description=training_data.description
         )
@@ -57,7 +57,6 @@ class TrainingService:
     async def get_trainings(
         skip: int = 0,
         limit: int = 100,
-        day: Optional[DayOfWeek] = None,
         training_type: Optional[TrainingType] = None,
         search: Optional[str] = None
     ) -> List[Training]:
@@ -67,14 +66,12 @@ class TrainingService:
         
         query: dict[str, Any] = {}
         
-        if day:
-            query["day"] = day.value
         if training_type:
             query["training_type"] = training_type.value
         if search:
             query["name"] = {"$regex": search, "$options": "i"}
         
-        cursor = collection.find(query).sort("day", 1).sort("name", 1).skip(skip).limit(limit)
+        cursor = collection.find(query).sort("name", 1).skip(skip).limit(limit)
         trainings = await cursor.to_list(length=limit)
 
         return [Training(**training) for training in trainings]
@@ -141,7 +138,6 @@ class TrainingService:
     
     @staticmethod
     async def count_trainings(
-        day: Optional[DayOfWeek] = None,
         training_type: Optional[TrainingType] = None
     ) -> int:
         """Count training sessions with optional filters"""
@@ -150,8 +146,6 @@ class TrainingService:
         
         query: dict[str, Any] = {}
         
-        if day:
-            query["day"] = day.value
         if training_type:
             query["training_type"] = training_type.value
         
