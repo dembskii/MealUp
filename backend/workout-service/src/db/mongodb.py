@@ -55,6 +55,7 @@ async def _create_indexes():
 
         trainings_collection = _database[settings.TRAININGS_COLLECTION]
         await trainings_collection.create_index("training_type")
+        await trainings_collection.create_index("creator_id")
         await trainings_collection.create_index("_created_at")
 
         workout_plans_collection = _database[settings.WORKOUT_PLANS_COLLECTION]

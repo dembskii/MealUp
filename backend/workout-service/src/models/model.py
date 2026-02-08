@@ -210,6 +210,7 @@ class Training(BaseModel):
     """Training session document stored in MongoDB"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), alias="_id", description="Unique training ID")
     name: str = Field(..., min_length=1, max_length=100, description="Training session name")
+    creator_id: Optional[str] = Field(None, description="User ID of the training creator")
     exercises: List[TrainingExercise] = Field(..., min_length=1, description="List of exercises in this training")
     est_time: int = Field(..., gt=0, description="Estimated time in seconds")
     training_type: TrainingType = Field(..., description="Type of training session")
@@ -262,6 +263,7 @@ class TrainingResponse(BaseModel):
     """Response schema for training session"""
     id: str = Field(alias="_id")
     name: str
+    creator_id: Optional[str] = None
     exercises: List[TrainingExercise]
     est_time: int
     training_type: TrainingType
@@ -348,6 +350,7 @@ class TrainingWithExercises(BaseModel):
     """Training session with full exercise details"""
     id: str = Field(alias="_id")
     name: str
+    creator_id: Optional[str] = None
     exercises: List[dict]
     est_time: int
     training_type: TrainingType

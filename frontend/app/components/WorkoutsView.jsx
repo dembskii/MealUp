@@ -509,14 +509,14 @@ export default function Workouts() {
 
   const formatDuration = (seconds) => `${Math.floor(seconds / 60)} min`;
 
-  // Own training IDs: from user's own plans + trainings created this session
+  // Own training IDs: trainings created by the current user (based on creator_id from API)
   const ownTrainingIds = useMemo(() => {
     if (!currentUserId) return new Set();
-    const fromPlans = plans
-      .filter(p => p.trainer_id === currentUserId)
-      .flatMap(p => p.trainings || []);
-    return new Set([...fromPlans, ...sessionCreatedIds]);
-  }, [plans, currentUserId, sessionCreatedIds]);
+    const fromApi = trainings
+      .filter(t => t.creator_id === currentUserId)
+      .map(t => t._id);
+    return new Set([...fromApi, ...sessionCreatedIds]);
+  }, [trainings, currentUserId, sessionCreatedIds]);
 
   const getDifficultyColor = (type) => {
     switch (type) {

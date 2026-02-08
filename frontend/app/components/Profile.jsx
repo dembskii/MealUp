@@ -51,6 +51,7 @@ export default function Profile() {
   const [editingRecipe, setEditingRecipe] = useState(null);
   const [myPlans, setMyPlans] = useState([]);
   const [myTrainings, setMyTrainings] = useState([]);
+  const [allPopulatedTrainings, setAllPopulatedTrainings] = useState([]);
   const [workoutsLoading, setWorkoutsLoading] = useState(true);
   const [exercisesDB, setExercisesDB] = useState({});
   const [allExercises, setAllExercises] = useState([]);
@@ -177,14 +178,17 @@ export default function Profile() {
 
         setMyPlans(plansRes);
 
-        // Collect training IDs from my plans so we only show MY trainings
-        const myTrainingIds = new Set(plansRes.flatMap(p => p.trainings || []));
-        const myTrainingsData = trainingsData.filter(t => myTrainingIds.has(t._id));
+        // Populate all trainings for plan detail lookups
+        const allPopulated = trainingsData.map(t => populateTraining(t, exMap));
+        setAllPopulatedTrainings(allPopulated);
+
+        // Filter trainings by creator_id to show only MY own trainings
+        const uid = auth.internal_uid || profile?.uid;
+        const myTrainingsData = trainingsData.filter(t => t.creator_id === uid);
 
         setMyTrainings(myTrainingsData.map(t => populateTraining(t, exMap)));
 
         // 5. Fetch liked workouts
-        const uid = auth.internal_uid || profile?.uid;
         if (uid) {
           try {
             const likedRes = await getLikedWorkouts(uid, { limit: 500 });
@@ -755,7 +759,7 @@ export default function Profile() {
                         <div className="ml-2 space-y-2">
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Trainings:</p>
                           {uniqueWorkoutIds.slice(0, 3).map(tid => {
-                            const t = myTrainings.find(tr => tr._id === tid);
+                            const t = allPopulatedTrainings.find(tr => tr._id === tid);
                             return t ? <div key={tid} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"><Dumbbell className="w-3.5 h-3.5 text-brand-500" />{t.name}</div> : null;
                           })}
                           {uniqueWorkoutIds.length > 3 && <p className="text-xs text-slate-400 ml-5">+{uniqueWorkoutIds.length - 3} more</p>}
@@ -1186,7 +1190,7 @@ export default function Profile() {
                         {dayTids.length > 0 ? (
                           <div className="p-3 space-y-2">
                             {dayTids.map((tid, i) => {
-                              const t = myTrainings.find(tr => tr._id === tid);
+                              const t = allPopulatedTrainings.find(tr => tr._id === tid);
                               const key = `plan-${day}-${tid}-${i}`;
                               const isExpanded = expandedPlanTrainings[key];
                               return t ? (
@@ -1305,7 +1309,7 @@ export default function Profile() {
                           {dayTrainings.length > 0 ? (
                             <div className="space-y-2 mt-2">
                               {dayTrainings.map((tid, idx) => {
-                                const t = myTrainings.find(tr => tr._id === tid);
+                                const t = allPopulatedTrainings.find(tr => tr._id === tid);
                                 return t ? (
                                   <motion.div key={`${day}-${idx}`} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                                     className="flex items-center justify-between p-3 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5 group">

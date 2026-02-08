@@ -17,7 +17,7 @@ class TrainingService:
     """Service for training session CRUD operations"""
     
     @staticmethod
-    async def create_training(training_data: TrainingCreate) -> Training:
+    async def create_training(training_data: TrainingCreate, creator_id: str = None) -> Training:
         """Create a new training session"""
         db = get_database()
         collection = db[settings.TRAININGS_COLLECTION]
@@ -29,6 +29,7 @@ class TrainingService:
 
         training = Training(
             name=training_data.name,
+            creator_id=creator_id,
             exercises=training_data.exercises,
             est_time=training_data.est_time,
             training_type=training_data.training_type,

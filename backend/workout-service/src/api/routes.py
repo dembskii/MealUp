@@ -219,10 +219,10 @@ async def get_training_with_exercises(training_id: str):
 
 
 @router.post("/trainings", response_model=TrainingResponse, status_code=201)
-async def create_training(training_data: TrainingCreate):
+async def create_training(training_data: TrainingCreate, x_user_id: Optional[str] = Header(None)):
     """Create a new training session"""
     try:
-        training = await TrainingService.create_training(training_data)
+        training = await TrainingService.create_training(training_data, creator_id=x_user_id)
         return training
     except ValueError as e:
         logger.error(f"Validation error creating training: {str(e)}")
