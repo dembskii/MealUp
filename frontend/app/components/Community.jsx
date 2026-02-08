@@ -5,13 +5,15 @@ import {
   Heart, MessageCircle, Share2, MoreHorizontal,
   Search, Flame, Clock, X,
   Eye, TrendingUp, Send, Plus, Hash, Loader2,
-  Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink
+  Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink,
+  ArrowRight, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as forumAPI from '../services/forumService';
 import { batchGetDisplayNames } from '../services/userService';
 import { getRecipes, getRecipeById } from '../services/recipeService';
 import { getTrainings, getTraining } from '../services/workoutService';
+import { getExercise } from '../services/workoutService';
 import { ENDPOINTS } from '../config/network';
 
 // ======================== UTILITIES ========================
@@ -179,7 +181,7 @@ function ConfirmDeleteModal({ title, message, onConfirm, onCancel }) {
 
 // ======================== COMMENT NODE ========================
 
-function CommentNode({ comment, onReply, onDeleteComment, onEditComment, currentUserId, likedCommentIds, depth = 0 }) {
+function CommentNode({ comment, onReply, onDeleteComment, onEditComment, currentUserId, likedCommentIds, depth = 0, commentAuthorNames = {} }) {
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
   const data = comment.comment || comment;
@@ -241,13 +243,13 @@ function CommentNode({ comment, onReply, onDeleteComment, onEditComment, current
   return (
     <div className={`flex gap-3 ${depth > 0 ? 'mt-3' : 'mt-4'}`}>
       <div className="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xs shrink-0">
-        {(data.user_id || data.author_id || '?').slice(-2).toUpperCase()}
+        {(commentAuthorNames[data.user_id || data.author_id] || data.user_id || data.author_id || '?').slice(0, 2).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
         <div className="bg-white/40 dark:bg-white/5 rounded-2xl px-4 py-2 inline-block min-w-[200px] relative group">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-bold text-sm text-slate-800 dark:text-white truncate">
-              {(data.user_id || data.author_id)?.slice(0, 12) || 'User'}
+              {commentAuthorNames[data.user_id || data.author_id] || 'User'}
             </span>
             <span className="text-xs text-slate-400">{timeAgo(data._created_at || data.created_at)}</span>
             {isOwner && (
@@ -335,6 +337,7 @@ function CommentNode({ comment, onReply, onDeleteComment, onEditComment, current
                 currentUserId={currentUserId}
                 likedCommentIds={likedCommentIds}
                 depth={depth + 1}
+                commentAuthorNames={commentAuthorNames}
               />
             ))}
           </div>
@@ -357,12 +360,28 @@ function CommentNode({ comment, onReply, onDeleteComment, onEditComment, current
 
 // ======================== COMMENT MODAL (Facebook-style) ========================
 
-function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
+function CommentModal({ post, onClose, currentUserId, onCommentCountChange, authorNames: parentAuthorNames = {} }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [likedCommentIds, setLikedCommentIds] = useState(new Set());
+  const [commentAuthorNames, setCommentAuthorNames] = useState({ ...parentAuthorNames });
+
+  // Collect all unique user IDs from comment tree
+  function collectUserIds(tree) {
+    const ids = new Set();
+    function walk(nodes) {
+      for (const node of nodes) {
+        const d = node.comment || node;
+        if (d.user_id) ids.add(d.user_id);
+        if (d.author_id) ids.add(d.author_id);
+        if (node.replies?.length) walk(node.replies);
+      }
+    }
+    walk(tree);
+    return [...ids];
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -372,6 +391,20 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
       .then(async (data) => {
         if (cancelled) return;
         setComments(data);
+        // Fetch author names for all commenters
+        const userIds = collectUserIds(data);
+        if (userIds.length > 0) {
+          try {
+            const nameMap = await batchGetDisplayNames(userIds);
+            if (!cancelled) {
+              setCommentAuthorNames((prev) => {
+                const next = { ...prev };
+                nameMap.forEach((name, id) => { next[id] = name; });
+                return next;
+              });
+            }
+          } catch { /* ignore */ }
+        }
         // Check liked status for all comments
         const allIds = collectCommentIds(data);
         if (allIds.length > 0) {
@@ -501,7 +534,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-sm shrink-0">
-                {(post.author_id || '?').slice(-2).toUpperCase()}
+                {(commentAuthorNames[post.author_id] || post.author_id || '?').slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0">
                 <h3 className="font-bold text-slate-800 dark:text-white truncate">{post.title || 'Post'}</h3>
@@ -551,6 +584,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
                   onEditComment={handleEditComment}
                   currentUserId={currentUserId}
                   likedCommentIds={likedCommentIds}
+                  commentAuthorNames={commentAuthorNames}
                 />
               ))}
             </div>
@@ -561,7 +595,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
         <div className="p-4 border-t border-slate-200/50 dark:border-white/10 bg-slate-50/50 dark:bg-black/20">
           <div className="flex gap-3">
             <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
-              {currentUserId ? currentUserId.slice(-2).toUpperCase() : 'Y'}
+              {(commentAuthorNames[currentUserId] || currentUserId || '?').slice(0, 2).toUpperCase()}
             </div>
             <div className="flex-1 relative">
               <input
@@ -590,7 +624,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange }) {
 
 // ======================== POST CARD ========================
 
-function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, onEdit, onDelete, viewedPostIdsRef, authorName, linkedItemNames }) {
+function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, onEdit, onDelete, viewedPostIdsRef, authorName, linkedItemNames, onLinkedItemClick }) {
   const [localLiked, setLocalLiked] = useState(isLiked);
   const [likeCount, setLikeCount] = useState(post.likes);
   const cardRef = useRef(null);
@@ -742,17 +776,17 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
       {post.linked_recipes?.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
           {post.linked_recipes.map((recipeId) => (
-            <a
+            <button
               key={recipeId}
-              href={`/recipes?id=${recipeId}`}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/50 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors group"
+              onClick={() => onLinkedItemClick?.('recipe', recipeId)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700/50 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors group cursor-pointer"
             >
               <ChefHat className="w-4 h-4 text-orange-500" />
               <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
                 {linkedItemNames?.recipes?.[recipeId] || 'Recipe'}
               </span>
               <ExternalLink className="w-3 h-3 text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </a>
+            </button>
           ))}
         </div>
       )}
@@ -761,17 +795,17 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
       {post.linked_workouts?.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
           {post.linked_workouts.map((workoutId) => (
-            <a
+            <button
               key={workoutId}
-              href={`/workouts?id=${workoutId}`}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors group"
+              onClick={() => onLinkedItemClick?.('workout', workoutId)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors group cursor-pointer"
             >
               <Dumbbell className="w-4 h-4 text-blue-500" />
               <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
                 {linkedItemNames?.workouts?.[workoutId] || 'Workout'}
               </span>
               <ExternalLink className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </a>
+            </button>
           ))}
         </div>
       )}
@@ -830,6 +864,7 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [contentError, setContentError] = useState('');
 
   // Recipe/workout linking
   const [linkedRecipes, setLinkedRecipes] = useState(editPost?.linked_recipes || []);
@@ -918,6 +953,11 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
 
   const handleSubmit = async () => {
     if (!title.trim() || !content.trim() || submitting) return;
+    if (content.trim().length < 10) {
+      setContentError('Content must be at least 10 characters long');
+      return;
+    }
+    setContentError('');
     setSubmitting(true);
     try {
       const payload = {
@@ -973,13 +1013,24 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
           />
 
           {/* Content */}
-          <textarea
-            autoFocus
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="Share your progress, ask a question, or motivate others..."
-            className="w-full h-32 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-800 dark:text-white placeholder-slate-400 outline-none resize-none text-base focus:ring-2 focus:ring-brand-500/20"
-          />
+          <div>
+            <textarea
+              autoFocus
+              value={content}
+              onChange={(e) => {
+                setContent(e.target.value);
+                if (contentError && e.target.value.trim().length >= 10) setContentError('');
+              }}
+              placeholder="Share your progress, ask a question, or motivate others..."
+              className={`w-full h-32 bg-slate-50 dark:bg-white/5 border ${contentError ? 'border-red-400 dark:border-red-500' : 'border-slate-200 dark:border-white/10'} rounded-xl px-4 py-3 text-slate-800 dark:text-white placeholder-slate-400 outline-none resize-none text-base focus:ring-2 focus:ring-brand-500/20`}
+            />
+            {contentError && (
+              <p className="mt-1.5 text-xs text-red-500 dark:text-red-400 font-medium flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                {contentError}
+              </p>
+            )}
+          </div>
 
           {/* Tags */}
           <div className="space-y-2">
@@ -1082,7 +1133,7 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
                 <ChefHat className="w-4 h-4" /> Add Recipe <ChevronDown className={`w-3 h-3 transition-transform ${showRecipePicker ? 'rotate-180' : ''}`} />
               </button>
               {showRecipePicker && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 max-h-56 overflow-hidden flex flex-col">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-[90] max-h-56 overflow-hidden flex flex-col">
                   <div className="p-2 border-b border-slate-100 dark:border-white/5">
                     <input
                       type="text"
@@ -1136,7 +1187,7 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
                 <Dumbbell className="w-4 h-4" /> Add Workout <ChevronDown className={`w-3 h-3 transition-transform ${showWorkoutPicker ? 'rotate-180' : ''}`} />
               </button>
               {showWorkoutPicker && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 max-h-56 overflow-hidden flex flex-col">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-[90] max-h-56 overflow-hidden flex flex-col">
                   <div className="p-2 border-b border-slate-100 dark:border-white/5">
                     <input
                       type="text"
@@ -1220,6 +1271,10 @@ export default function Community() {
   const viewedPostIdsRef = useRef(new Set());
   const [authorNames, setAuthorNames] = useState({});
   const [linkedItemNames, setLinkedItemNames] = useState({ recipes: {}, workouts: {} });
+
+  // Detail popup state for linked items
+  const [detailPopup, setDetailPopup] = useState(null); // { type: 'recipe'|'workout', data: object } | null
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Fetch current user on mount
   useEffect(() => {
@@ -1373,6 +1428,8 @@ export default function Community() {
             content: p.content,
             tags: p.tags || [],
             images: p.images || [],
+            linked_recipes: p.linked_recipes || [],
+            linked_workouts: p.linked_workouts || [],
             total_likes: p.total_likes ?? 0,
             views_count: p.views_count ?? 0,
             _created_at: p.created_at,
@@ -1464,7 +1521,6 @@ export default function Community() {
       setIsCreating(false);
     } catch (e) {
       console.error('Failed to create post:', e);
-      alert('Failed to create post: ' + e.message);
     }
   };
 
@@ -1479,7 +1535,6 @@ export default function Community() {
       setEditingPost(null);
     } catch (e) {
       console.error('Failed to update post:', e);
-      alert('Failed to update post: ' + e.message);
     }
   };
 
@@ -1508,6 +1563,39 @@ export default function Community() {
   const handleCommentCountChange = (postId, count) => {
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, commentCount: count } : p)));
   };
+
+  // Linked item click handler — fetch full details and show popup
+  const handleLinkedItemClick = useCallback(async (type, id) => {
+    setDetailLoading(true);
+    setDetailPopup(null);
+    try {
+      if (type === 'recipe') {
+        const data = await getRecipeById(id);
+        setDetailPopup({ type: 'recipe', data });
+      } else if (type === 'workout') {
+        const data = await getTraining(id);
+        // Enrich exercises with details
+        if (data.exercises?.length > 0) {
+          const enriched = await Promise.all(
+            data.exercises.map(async (ex) => {
+              try {
+                const detail = await getExercise(ex.exercise_id);
+                return { ...ex, _exerciseDetails: detail };
+              } catch {
+                return { ...ex, _exerciseDetails: { name: 'Unknown', body_part: '', advancement: '' } };
+              }
+            })
+          );
+          data.exercises = enriched;
+        }
+        setDetailPopup({ type: 'workout', data });
+      }
+    } catch (e) {
+      console.error('Failed to load detail:', e);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 max-w-4xl mx-auto">
@@ -1585,19 +1673,23 @@ export default function Community() {
 
       {/* Posts feed with virtualization */}
       <div ref={containerRef}>
+        <AnimatePresence mode="wait">
         {initialLoading ? (
-          <div className="flex flex-col items-center justify-center py-20">
+          <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-brand-500 mb-4" />
             <p className="text-sm text-slate-400">Loading community feed...</p>
-          </div>
+          </motion.div>
         ) : posts.length === 0 ? (
-          <div className="text-center py-20 opacity-50">
+          <motion.div key="empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
+            className="text-center py-20 opacity-50">
             <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
             <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
             <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
-          </div>
+          </motion.div>
         ) : (
-          <div style={{ minHeight: totalHeight, position: 'relative' }}>
+          <motion.div key={`feed-${sortMode}-${filterType}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
+            style={{ minHeight: totalHeight, position: 'relative' }}>
             <div style={{ transform: `translateY(${offsetY}px)` }}>
               {visibleItems.map((post) => (
                 <PostCard
@@ -1612,11 +1704,13 @@ export default function Community() {
                   viewedPostIdsRef={viewedPostIdsRef}
                   authorName={authorNames[post.author_id]}
                   linkedItemNames={linkedItemNames}
+                  onLinkedItemClick={handleLinkedItemClick}
                 />
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         <div ref={sentinelRef} className="h-4" />
 
@@ -1643,7 +1737,171 @@ export default function Community() {
       {/* Comment Modal */}
       <AnimatePresence>
         {commentPost && (
-          <CommentModal post={commentPost} onClose={() => setCommentPost(null)} currentUserId={currentUserId} onCommentCountChange={handleCommentCountChange} />
+          <CommentModal post={commentPost} onClose={() => setCommentPost(null)} currentUserId={currentUserId} onCommentCountChange={handleCommentCountChange} authorNames={authorNames} />
+        )}
+      </AnimatePresence>
+
+      {/* Linked Item Detail Popup */}
+      <AnimatePresence>
+        {detailPopup?.type === 'recipe' && (() => {
+          const recipe = detailPopup.data;
+          const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/800/500`;
+          return (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDetailPopup(null)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="w-full max-w-4xl glass-panel bg-white/95 dark:bg-slate-900/95 backdrop-blur-3xl rounded-[2.5rem] relative z-10 flex flex-col max-h-[90vh] shadow-2xl overflow-hidden border border-white/50 dark:border-white/10">
+                <div className="relative h-72 md:h-80 w-full shrink-0">
+                  <img src={imageUrl} alt={recipe.name} className="w-full h-full object-cover"
+                    onError={(e) => { e.target.src = 'https://picsum.photos/800/500?grayscale'; }} />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <div className="absolute top-6 right-6">
+                    <button onClick={() => setDetailPopup(null)} className="p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors backdrop-blur-md border border-white/10">
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+                  <div className="absolute bottom-0 left-0 w-full p-8 text-white">
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="flex flex-wrap gap-2 mb-3">
+                      <span className="px-3 py-1 bg-white/20 backdrop-blur-md text-xs font-bold rounded-full border border-white/20">
+                        {recipe.ingredients?.length || 0} ingredients
+                      </span>
+                      <span className="px-3 py-1 bg-white/20 backdrop-blur-md text-xs font-bold rounded-full border border-white/20">
+                        {recipe.prepare_instruction?.length || 0} steps
+                      </span>
+                    </motion.div>
+                    <h2 className="text-3xl md:text-4xl font-bold leading-tight drop-shadow-lg mb-2">{recipe.name}</h2>
+                    <div className="flex items-center gap-3 text-white/70 text-sm">
+                      <span>By {authorNames[recipe.author_id] || recipe.author_id?.slice(0, 8) || 'Unknown'}</span>
+                      {recipe._created_at && <span>• {new Date(recipe._created_at).toLocaleDateString()}</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="p-8 space-y-8">
+                    <div className="flex gap-4 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 items-center justify-around">
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Time</p>
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="p-1.5 bg-brand-100 dark:bg-brand-900/30 rounded-full text-brand-500"><Clock className="w-4 h-4" /></div>
+                          <span className="text-lg font-bold text-slate-800 dark:text-white">{recipe.time_to_prepare ? `${recipe.time_to_prepare} min` : '—'}</span>
+                        </div>
+                      </div>
+                      <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Ingredients</p>
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 rounded-full text-orange-500"><ChefHat className="w-4 h-4" /></div>
+                          <span className="text-lg font-bold text-slate-800 dark:text-white">{recipe.ingredients?.length || 0}</span>
+                        </div>
+                      </div>
+                      <div className="w-px h-10 bg-slate-200 dark:bg-white/10" />
+                      <div className="text-center">
+                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Steps</p>
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full text-green-500"><ArrowRight className="w-4 h-4" /></div>
+                          <span className="text-lg font-bold text-slate-800 dark:text-white">{recipe.prepare_instruction?.length || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                      <div className="lg:col-span-2">
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><ChefHat className="w-5 h-5 text-brand-500" /> Ingredients</h3>
+                        <ul className="space-y-3">
+                          {recipe.ingredients?.map((item, i) => (
+                            <li key={i} className="flex items-start gap-3 p-3 bg-white/50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                              <div className="mt-0.5 p-0.5 bg-brand-500 rounded-full"><CheckCircle2 className="w-3 h-3 text-white" /></div>
+                              <span className="text-sm text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                                {item.ingredient_id} — {item.quantity} {item.capacity}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="lg:col-span-3">
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><ArrowRight className="w-5 h-5 text-brand-500" /> Instructions</h3>
+                        <div className="space-y-6">
+                          {recipe.prepare_instruction?.map((step, i) => (
+                            <div key={i} className="flex gap-4 group">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold flex items-center justify-center text-sm border border-slate-200 dark:border-white/10 group-hover:bg-brand-500 group-hover:text-white transition-colors duration-300">{i + 1}</div>
+                              <p className="flex-1 text-slate-600 dark:text-slate-300 leading-relaxed pt-1 border-b border-slate-100 dark:border-white/5 pb-6 last:border-0 last:pb-0">{step}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {detailPopup?.type === 'workout' && (() => {
+          const training = detailPopup.data;
+          return (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDetailPopup(null)} className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" />
+              <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                className="w-full max-w-2xl bg-white/95 dark:bg-slate-900/95 glass-panel rounded-[2.5rem] relative z-10 flex flex-col max-h-[88vh] shadow-2xl border border-white/40 overflow-hidden">
+                <div className="p-5 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-white/5 backdrop-blur-sm">
+                  <div className="pl-3 flex-1 min-w-0">
+                    <h3 className="font-bold text-xl text-slate-800 dark:text-white drop-shadow-sm truncate">{training.name}</h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30">{training.training_type?.replace('_', ' ')}</span>
+                      <span className="text-[10px] text-slate-400 font-bold">{training.est_time ? `${training.est_time} min` : ''}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setDetailPopup(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                  {training.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{training.description}</p>}
+                  {training.exercises?.map((ex, i) => (
+                    <div key={i} className="p-5 bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Dumbbell className="w-5 h-5" /></div>
+                        <div>
+                          <h4 className="font-bold text-slate-800 dark:text-white">{ex._exerciseDetails?.name || ex.exercise_id || 'Unknown'}</h4>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} • {ex._exerciseDetails?.advancement || ''}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {ex.sets?.map((set, si) => (
+                          <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                            <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                            <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                            <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2 ml-1">Rest: {ex.rest_between_sets}s between sets</p>}
+                      {ex.notes && <p className="text-xs text-slate-500 mt-2 ml-1 italic">{ex.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Detail loading overlay */}
+      <AnimatePresence>
+        {detailLoading && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+              className="relative z-10 p-6 bg-white/90 dark:bg-slate-800/90 rounded-2xl shadow-xl flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-brand-500" />
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Loading details...</span>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </motion.div>
