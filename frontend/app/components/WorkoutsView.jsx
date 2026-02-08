@@ -766,7 +766,7 @@ export default function Workouts() {
                         onClick={(e) => handleToggleLike(e, training._id)}
                         disabled={likingInProgress.has(training._id)}
                         className={`p-1.5 rounded-xl transition-all ${likedWorkoutIds.has(training._id) ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'text-slate-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10'} ${likingInProgress.has(training._id) ? 'opacity-50' : ''}`}
-                        title={likedWorkoutIds.has(training._id) ? 'Usuń polubienie' : 'Polub trening'}
+                        title={likedWorkoutIds.has(training._id) ? 'Unlike' : 'Like workout'}
                       >
                         <Heart className={`w-4 h-4 ${likedWorkoutIds.has(training._id) ? 'fill-current' : ''}`} />
                       </button>
@@ -1036,8 +1036,8 @@ export default function Workouts() {
                     return (
                       <div className="text-center py-16 opacity-60">
                         <Dumbbell className="w-10 h-10 mx-auto text-slate-300 mb-4" />
-                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Brak dostępnych treningów</p>
-                        <p className="text-[11px] text-slate-400 mt-2 max-w-xs mx-auto">Stwórz własne treningi lub polub treningi innych użytkowników, aby móc je dodawać do planów.</p>
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">No trainings available</p>
+                        <p className="text-[11px] text-slate-400 mt-2 max-w-xs mx-auto">Create your own trainings or like other users' trainings to add them to plans.</p>
                       </div>
                     );
                   }
@@ -1045,7 +1045,7 @@ export default function Workouts() {
                     <>
                       {ownTrainings.length > 0 && (
                         <>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-1">Twoje treningi</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-1">Your trainings</p>
                           {ownTrainings.map(training => (
                             <div key={training._id} onClick={() => handleAddToPlanSchedule(training._id)}
                               className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 dark:hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">
@@ -1063,7 +1063,7 @@ export default function Workouts() {
                       )}
                       {likedOnly.length > 0 && (
                         <>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-3 flex items-center gap-1.5"><Heart className="w-3 h-3 text-red-400" /> Polubione</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-3 flex items-center gap-1.5"><Heart className="w-3 h-3 text-red-400" /> Liked</p>
                           {likedOnly.map(training => (
                             <div key={training._id} onClick={() => handleAddToPlanSchedule(training._id)}
                               className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 dark:hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">

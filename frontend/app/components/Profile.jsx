@@ -879,8 +879,8 @@ export default function Profile() {
                     <Heart className="w-5 h-5 text-red-500" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Polubione treningi</h3>
-                    <p className="text-xs text-slate-400">{likedTrainings.length} polubionych</p>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Liked trainings</h3>
+                    <p className="text-xs text-slate-400">{likedTrainings.length} liked</p>
                   </div>
                 </div>
                 {likedTrainings.length > 0 ? (
@@ -896,7 +896,7 @@ export default function Profile() {
                               onClick={(e) => handleUnlikeWorkout(e, training._id)}
                               disabled={unlikingInProgress.has(training._id)}
                               className={`p-1.5 rounded-xl transition-all text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 ${unlikingInProgress.has(training._id) ? 'opacity-50' : ''}`}
-                              title="Usuń polubienie"
+                              title="Unlike"
                             >
                               <Heart className="w-4 h-4 fill-current" />
                             </button>
@@ -921,7 +921,7 @@ export default function Profile() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-center text-slate-400 py-10">Nie masz jeszcze polubionych treningów.</p>
+                  <p className="text-center text-slate-400 py-10">You haven't liked any trainings yet.</p>
                 )}
               </div>
             </div>
