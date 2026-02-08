@@ -9,10 +9,13 @@ import WorkoutsView from "./components/WorkoutsView";
 import Community from "./components/Community";
 import Settings from "./components/Settings";
 import Profile from "./components/Profile";
-import { Menu, X } from "lucide-react";
+import LandingPage from "./components/LandingPage";
+import { useAuth } from "./context/AuthContext";
+import { Menu, X, Loader2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 export default function Home() {
+  const { user, isLoading, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState(NavItem.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [theme, setTheme] = useState("dark");
@@ -32,6 +35,23 @@ export default function Home() {
       root.classList.add(theme);
     }
   }, [theme]);
+
+  // Show a full-screen loader while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <img src="/images/logo.png" alt="MealUp" className="w-14 h-14 drop-shadow-lg animate-pulse" />
+          <Loader2 className="w-7 h-7 animate-spin text-brand-500" />
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated, show the landing page
+  if (!isAuthenticated) {
+    return <LandingPage />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {

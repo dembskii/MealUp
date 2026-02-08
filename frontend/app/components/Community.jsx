@@ -9,6 +9,7 @@ import {
   ArrowRight, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 import * as forumAPI from '../services/forumService';
 import { batchGetDisplayNames } from '../services/userService';
 import { getRecipes, getRecipeById } from '../services/recipeService';
@@ -1276,31 +1277,22 @@ export default function Community() {
   const [detailPopup, setDetailPopup] = useState(null); // { type: 'recipe'|'workout', data: object } | null
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Fetch current user on mount
+  const { user: authUser } = useAuth();
+
+  // Set current user from auth context
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
-        if (res.ok) {
-          const auth = await res.json();
-          const uid = auth.internal_uid || null;
-          setCurrentUserId(uid);
-          // Fetch own display name for Create Post modal
-          if (uid) {
-            batchGetDisplayNames([uid]).then((nameMap) => {
-              setAuthorNames((prev) => {
-                const next = { ...prev };
-                nameMap.forEach((name, id) => { next[id] = name; });
-                return next;
-              });
-            }).catch(() => {});
-          }
-        }
-      } catch {
-        /* not logged in */
-      }
-    })();
-  }, []);
+    const uid = authUser?.internal_uid || null;
+    setCurrentUserId(uid);
+    if (uid) {
+      batchGetDisplayNames([uid]).then((nameMap) => {
+        setAuthorNames((prev) => {
+          const next = { ...prev };
+          nameMap.forEach((name, id) => { next[id] = name; });
+          return next;
+        });
+      }).catch(() => {});
+    }
+  }, [authUser]);
 
   // Debounce search
   useEffect(() => {
@@ -1477,6 +1469,7 @@ export default function Community() {
         if (currentFetchId !== fetchIdRef.current) return;
         console.error('Failed to fetch posts:', e);
         setError(e.message);
+        setHasMore(false);
       } finally {
         if (currentFetchId === fetchIdRef.current) {
           setLoading(false);

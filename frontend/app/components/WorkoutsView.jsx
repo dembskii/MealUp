@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   TrainingType, SetUnit, BodyPart, Advancement
 } from '../data/types';
+import { useAuth } from '../context/AuthContext';
 import { generateWorkout } from '../services/geminiService';
 import {
   getExercises,
@@ -184,18 +185,15 @@ export default function Workouts() {
     }
   }, []);
 
+  const { user: authUser } = useAuth();
+
   useEffect(() => {
     (async () => {
       setInitialLoading(true);
       try {
-        // Fetch current user
-        try {
-          const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
-          if (res.ok) {
-            const auth = await res.json();
-            setCurrentUserId(auth.internal_uid || null);
-          }
-        } catch { /* not logged in */ }
+        // Set current user from auth context
+        const uid = authUser?.internal_uid || null;
+        setCurrentUserId(uid);
 
         const exercises = await getExercises({ limit: 500 });
         setAllExercises(exercises);
@@ -211,19 +209,14 @@ export default function Workouts() {
         setPlans(plansData);
 
         // Fetch liked workout status
-        try {
-          const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
-          if (res.ok) {
-            const auth = await res.json();
-            const uid = auth.internal_uid;
-            if (uid && trainingsData.length > 0) {
-              const ids = trainingsData.map(t => t._id);
-              const { results } = await checkWorkoutsLikedBulk(uid, ids);
-              setLikedWorkoutIds(new Set(Object.entries(results).filter(([, v]) => v).map(([k]) => k)));
-            }
+        if (uid && trainingsData.length > 0) {
+          try {
+            const ids = trainingsData.map(t => t._id);
+            const { results } = await checkWorkoutsLikedBulk(uid, ids);
+            setLikedWorkoutIds(new Set(Object.entries(results).filter(([, v]) => v).map(([k]) => k)));
+          } catch (e) {
+            console.error('Failed to fetch liked workouts status:', e);
           }
-        } catch (e) {
-          console.error('Failed to fetch liked workouts status:', e);
         }
       } catch (err) {
         console.error('Failed to load workout data:', err);

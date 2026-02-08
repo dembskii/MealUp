@@ -1,5 +1,6 @@
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import { AuthProviderWrapper } from "./context/AuthProviderWrapper";
 
 const plusJakarta = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -21,7 +22,7 @@ export default function RootLayout({ children }) {
           <div className="blob blob-2"></div>
           <div className="blob blob-3"></div>
         </div>
-        {children}
+        <AuthProviderWrapper>{children}</AuthProviderWrapper>
       </body>
     </html>
   );
