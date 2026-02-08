@@ -708,7 +708,7 @@ export default function Profile() {
   if (error && !authUser) {
     return (
       <div className="text-center py-24">
-        <p className="text-red-500 mb-4">You need to be logged in to view your profile.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-4">Could not load profile data.</p>
         <button onClick={fetchProfileData} className="px-5 py-2.5 liquid-btn liquid-btn-primary rounded-2xl font-semibold">Retry</button>
       </div>
     );
