@@ -12,7 +12,10 @@ import {
   getMyWorkoutPlans, getTrainings, getExercises,
   updateTraining, deleteTraining, updateWorkoutPlan, deleteWorkoutPlan,
 } from '../services/workoutService';
-import { TrainingType, SetUnit, DayOfWeek, BodyPart, Advancement } from '../data/types';
+import {
+  getLikedWorkouts, unlikeWorkout,
+} from '../services/userService';
+import { TrainingType, SetUnit, BodyPart, Advancement } from '../data/types';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const buildExerciseMap = (exercisesArr) => {
@@ -51,6 +54,8 @@ export default function Profile() {
   const [workoutsLoading, setWorkoutsLoading] = useState(true);
   const [exercisesDB, setExercisesDB] = useState({});
   const [allExercises, setAllExercises] = useState([]);
+  const [likedTrainings, setLikedTrainings] = useState([]);
+  const [unlikingInProgress, setUnlikingInProgress] = useState(new Set());
 
   // Search & filter state for profile tabs
   const [planSearchQuery, setPlanSearchQuery] = useState('');
@@ -177,6 +182,22 @@ export default function Profile() {
         const myTrainingsData = trainingsData.filter(t => myTrainingIds.has(t._id));
 
         setMyTrainings(myTrainingsData.map(t => populateTraining(t, exMap)));
+
+        // 5. Fetch liked workouts
+        const uid = auth.internal_uid || profile?.uid;
+        if (uid) {
+          try {
+            const likedRes = await getLikedWorkouts(uid, { limit: 500 });
+            const likedItems = likedRes.items || likedRes || [];
+            const likedIds = likedItems.map(item => item.workout_id);
+            if (likedIds.length > 0) {
+              const likedTrainingsData = trainingsData.filter(t => likedIds.includes(t._id));
+              setLikedTrainings(likedTrainingsData.map(t => populateTraining(t, exMap)));
+            }
+          } catch (likedErr) {
+            console.warn('Could not fetch liked workouts:', likedErr);
+          }
+        }
       } catch (workoutErr) {
         console.warn('Could not fetch workout data:', workoutErr);
       } finally {
@@ -198,11 +219,20 @@ export default function Profile() {
 
   const getDifficultyColor = (type) => {
     switch (type) {
-      case TrainingType.HIIT: return 'text-orange-600 bg-orange-100/50 border-orange-200';
-      case TrainingType.STRENGTH: return 'text-red-600 bg-red-100/50 border-red-200';
-      case TrainingType.CARDIO: return 'text-blue-600 bg-blue-100/50 border-blue-200';
-      case TrainingType.YOGA: return 'text-green-600 bg-green-100/50 border-green-200';
-      default: return 'text-slate-500 bg-slate-100/50 border-slate-100';
+      case TrainingType.HIIT: return 'text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/30 border-orange-200 dark:border-orange-700/50';
+      case TrainingType.STRENGTH: return 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 border-red-200 dark:border-red-700/50';
+      case TrainingType.CARDIO: return 'text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/30 border-sky-200 dark:border-sky-700/50';
+      case TrainingType.YOGA: return 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700/50';
+      case TrainingType.PUSH: return 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30 border-violet-200 dark:border-violet-700/50';
+      case TrainingType.PULL: return 'text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700/50';
+      case TrainingType.LEGS: return 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700/50';
+      case TrainingType.UPPER: return 'text-cyan-700 dark:text-cyan-300 bg-cyan-100 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-700/50';
+      case TrainingType.LOWER: return 'text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-900/30 border-teal-200 dark:border-teal-700/50';
+      case TrainingType.FULL_BODY: return 'text-fuchsia-700 dark:text-fuchsia-300 bg-fuchsia-100 dark:bg-fuchsia-900/30 border-fuchsia-200 dark:border-fuchsia-700/50';
+      case TrainingType.HYPERTROPHY: return 'text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/30 border-rose-200 dark:border-rose-700/50';
+      case TrainingType.ENDURANCE: return 'text-lime-700 dark:text-lime-300 bg-lime-100 dark:bg-lime-900/30 border-lime-200 dark:border-lime-700/50';
+      case TrainingType.FLEXIBILITY: return 'text-pink-700 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/30 border-pink-200 dark:border-pink-700/50';
+      default: return 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
     }
   };
 
@@ -245,7 +275,6 @@ export default function Profile() {
       _id: training._id,
       name: training.name,
       description: training.description || '',
-      day: training.day,
       training_type: training.training_type,
       est_time: training.est_time,
       exercises: training.exercises.map(ex => ({
@@ -271,7 +300,6 @@ export default function Profile() {
           notes: ex.notes || null,
         })),
         est_time: editingTraining.est_time,
-        day: editingTraining.day,
         training_type: editingTraining.training_type,
         description: editingTraining.description || null,
       };
@@ -293,6 +321,21 @@ export default function Profile() {
       setSelectedTraining(null);
     } catch (err) {
       console.error('Failed to delete training:', err);
+    }
+  };
+
+  const handleUnlikeWorkout = async (e, trainingId) => {
+    e.stopPropagation();
+    const uid = authUser?.internal_uid || userProfile?.uid;
+    if (!uid || unlikingInProgress.has(trainingId)) return;
+    setUnlikingInProgress(prev => new Set(prev).add(trainingId));
+    try {
+      await unlikeWorkout(uid, trainingId);
+      setLikedTrainings(prev => prev.filter(t => t._id !== trainingId));
+    } catch (err) {
+      console.error('Failed to unlike workout:', err);
+    } finally {
+      setUnlikingInProgress(prev => { const s = new Set(prev); s.delete(trainingId); return s; });
     }
   };
 
@@ -335,12 +378,19 @@ export default function Profile() {
 
   // ---------- Plan handlers ----------
   const handleStartEditPlan = (plan) => {
-    const schedule = emptySchedule();
-    (plan.trainings || []).forEach(tid => {
-      const t = myTrainings.find(tr => tr._id === tid);
-      const day = t?.day || 1;
-      schedule[day] = [...(schedule[day] || []), tid];
-    });
+    let schedule;
+    if (plan.schedule && typeof plan.schedule === 'object') {
+      schedule = emptySchedule();
+      Object.entries(plan.schedule).forEach(([day, tids]) => {
+        schedule[parseInt(day)] = [...(tids || [])];
+      });
+    } else {
+      schedule = emptySchedule();
+      (plan.trainings || []).forEach((tid, idx) => {
+        const day = (idx % 7) + 1;
+        schedule[day] = [...(schedule[day] || []), tid];
+      });
+    }
     setEditingPlan({
       _id: plan._id,
       name: plan.name,
@@ -360,6 +410,7 @@ export default function Profile() {
         name: editingPlan.name,
         description: editingPlan.description || null,
         trainings: flatTrainings,
+        schedule: editingPlan.schedule,
         is_public: editingPlan.is_public,
       };
       const saved = await updateWorkoutPlan(editingPlan._id, payload);
@@ -799,7 +850,6 @@ export default function Profile() {
                       <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
                         <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatDuration(training.est_time)}</span></div>
                         <div className="flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" /><span>{training.exercises.length} exercises</span></div>
-                        <div className="flex items-center gap-1 ml-auto"><Calendar className="w-3.5 h-3.5 text-slate-400" /><span className="text-xs">{dayNames[training.day]}</span></div>
                       </div>
                       <div className="space-y-2">
                         {training.exercises.slice(0, 3).map((ex, i) => (
@@ -817,6 +867,59 @@ export default function Profile() {
               ) : (
                 <p className="text-center text-slate-400 py-10">{myTrainings.length > 0 ? 'No workouts match your filters.' : "You haven't created any workouts yet."}</p>
               )}
+
+              {/* LIKED WORKOUTS SECTION */}
+              <div className="mt-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-xl">
+                    <Heart className="w-5 h-5 text-red-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Polubione treningi</h3>
+                    <p className="text-xs text-slate-400">{likedTrainings.length} polubionych</p>
+                  </div>
+                </div>
+                {likedTrainings.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {likedTrainings.map(training => (
+                      <motion.div key={`liked-${training._id}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
+                        onClick={() => setSelectedTraining(training)}
+                        className="glass-panel rounded-3xl p-6 relative overflow-hidden group cursor-pointer">
+                        <div className="flex justify-between items-start mb-4">
+                          <h3 className="text-lg font-bold text-slate-800 dark:text-white group-hover:text-brand-600 transition-colors pr-2">{training.name}</h3>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={(e) => handleUnlikeWorkout(e, training._id)}
+                              disabled={unlikingInProgress.has(training._id)}
+                              className={`p-1.5 rounded-xl transition-all text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 ${unlikingInProgress.has(training._id) ? 'opacity-50' : ''}`}
+                              title="Usuń polubienie"
+                            >
+                              <Heart className="w-4 h-4 fill-current" />
+                            </button>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(training.training_type)}`}>{training.training_type?.replace('_', ' ')}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
+                          <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatDuration(training.est_time)}</span></div>
+                          <div className="flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" /><span>{training.exercises.length} exercises</span></div>
+                        </div>
+                        <div className="space-y-2">
+                          {training.exercises.slice(0, 3).map((ex, i) => (
+                            <div key={i} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                              <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+                              <span>{ex._exerciseDetails?.name || 'Unknown'}</span>
+                              <span className="text-slate-400 text-xs ml-auto">{ex.sets.length} x {ex.sets[0]?.volume} {ex.sets[0]?.units}</span>
+                            </div>
+                          ))}
+                          {training.exercises.length > 3 && <p className="text-xs text-slate-400 ml-3">+{training.exercises.length - 3} more</p>}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-slate-400 py-10">Nie masz jeszcze polubionych treningów.</p>
+                )}
+              </div>
             </div>
           )}
         </motion.div>
@@ -835,7 +938,6 @@ export default function Profile() {
                   <div className="flex items-center gap-3 mt-1">
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(selectedTraining.training_type)}`}>{selectedTraining.training_type?.replace('_', ' ')}</span>
                     <span className="text-[10px] text-slate-400 font-bold">{formatDuration(selectedTraining.est_time)}</span>
-                    <span className="text-[10px] text-slate-400 font-bold">{dayNames[selectedTraining.day]}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -904,13 +1006,6 @@ export default function Profile() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Day</label>
-                    <select value={editingTraining.day} onChange={e => setEditingTraining({...editingTraining, day: parseInt(e.target.value)})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
-                      {Object.entries(DayOfWeek).map(([k, v]) => <option key={v} value={v}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}
-                    </select>
-                  </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
                     <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
@@ -1067,62 +1162,91 @@ export default function Profile() {
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {selectedPlan.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedPlan.description}</p>}
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Layers className="w-3 h-3 text-brand-500" /> Trainings in this plan</label>
-                {(selectedPlan.trainings || []).map((tid, i) => {
-                  const t = myTrainings.find(tr => tr._id === tid);
-                  const isExpanded = expandedPlanTrainings[`${tid}-${i}`];
-                  return t ? (
-                    <div key={`${tid}-${i}`} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
-                      <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [`${tid}-${i}`]: !prev[`${tid}-${i}`] }))}
-                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/30 dark:hover:bg-white/[0.03] transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Activity className="w-5 h-5" /></div>
-                          <div>
-                            <h4 className="font-bold text-slate-800 dark:text-white">{t.name}</h4>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)} &bull; {dayNames[t.day]}</p>
-                          </div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-brand-500" /> Weekly Breakdown</label>
+                {(() => {
+                  const schedule = (() => {
+                    if (selectedPlan.schedule && typeof selectedPlan.schedule === 'object') {
+                      const s = {};
+                      for (let d = 1; d <= 7; d++) s[d] = selectedPlan.schedule[String(d)] || selectedPlan.schedule[d] || [];
+                      return s;
+                    }
+                    const s = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+                    (selectedPlan.trainings || []).forEach((tid, idx) => { s[(idx % 7) + 1].push(tid); });
+                    return s;
+                  })();
+                  return [1, 2, 3, 4, 5, 6, 7].map(day => {
+                    const dayTids = schedule[day] || [];
+                    return (
+                      <div key={day} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
+                        <div className="px-4 py-3 flex items-center gap-3 border-b border-white/30 dark:border-white/5 bg-white/30 dark:bg-white/[0.02]">
+                          <span className="w-8 h-8 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center text-[11px] font-black">{dayNames[day].slice(0, 2).toUpperCase()}</span>
+                          <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200">{dayNames[day]}</h4>
+                          <span className="text-[10px] text-slate-400 font-bold ml-auto">{dayTids.length > 0 ? `${dayTids.length} training${dayTids.length > 1 ? 's' : ''}` : 'Rest day'}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
-                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                            <div className="px-4 pb-4 space-y-3 border-t border-white/30 dark:border-white/5 pt-3">
-                              {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
-                              {t.exercises.map((ex, ei) => (
-                                <div key={ei} className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <Dumbbell className="w-4 h-4 text-brand-500" />
-                                    <div>
-                                      <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
-                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} &bull; {ex._exerciseDetails?.advancement || ''}</p>
+                        {dayTids.length > 0 ? (
+                          <div className="p-3 space-y-2">
+                            {dayTids.map((tid, i) => {
+                              const t = myTrainings.find(tr => tr._id === tid);
+                              const key = `plan-${day}-${tid}-${i}`;
+                              const isExpanded = expandedPlanTrainings[key];
+                              return t ? (
+                                <div key={key} className="bg-white/50 dark:bg-black/10 rounded-xl border border-white/40 dark:border-white/5 overflow-hidden">
+                                  <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [key]: !prev[key] }))}
+                                    className="p-3 flex items-center justify-between cursor-pointer hover:bg-white/40 dark:hover:bg-white/[0.03] transition-colors">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-1.5 bg-brand-500/10 text-brand-500 rounded-lg"><Activity className="w-4 h-4" /></div>
+                                      <div>
+                                        <h5 className="font-bold text-sm text-slate-800 dark:text-white">{t.name}</h5>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatDuration(t.est_time)} &bull; {t.exercises.length} exercises</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
+                                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                    {ex.sets.map((set, si) => (
-                                      <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
-                                        <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
-                                        <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
-                                        <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2">Rest: {ex.rest_between_sets}s between sets</p>}
-                                  {ex.notes && <p className="text-xs text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                  <AnimatePresence>
+                                    {isExpanded && (
+                                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                        <div className="px-3 pb-3 space-y-2 border-t border-white/30 dark:border-white/5 pt-3">
+                                          {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
+                                          {t.exercises.map((ex, ei) => (
+                                            <div key={ei} className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                              <div className="flex items-center gap-2 mb-2">
+                                                <Dumbbell className="w-3.5 h-3.5 text-brand-500" />
+                                                <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
+                                                <span className="text-[9px] text-slate-400 font-bold uppercase ml-auto">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')}</span>
+                                              </div>
+                                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                                {ex.sets.map((set, si) => (
+                                                  <div key={si} className="flex items-center gap-1.5 p-1.5 bg-white/60 dark:bg-black/20 rounded-lg border border-white/40 dark:border-white/5">
+                                                    <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                                                    <span className="text-xs font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                                                    <span className="text-[9px] font-bold text-slate-400">{set.units}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                              {ex.rest_between_sets > 0 && <p className="text-[9px] text-slate-400 mt-1.5">Rest: {ex.rest_between_sets}s</p>}
+                                              {ex.notes && <p className="text-[10px] text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </div>
-                              ))}
-                            </div>
-                          </motion.div>
+                              ) : (
+                                <div key={key} className="p-2 bg-white/30 dark:bg-white/5 rounded-lg text-xs text-slate-400 italic">Training not found</div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="px-4 py-3 text-[10px] text-slate-400 italic flex items-center gap-2 ml-11">Rest day</div>
                         )}
-                      </AnimatePresence>
-                    </div>
-                  ) : (
-                    <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl text-xs text-slate-400 italic">Training not found</div>
-                  );
-                })}
+                      </div>
+                    );
+                  });
+                })()}
                 {(!selectedPlan.trainings || selectedPlan.trainings.length === 0) && <p className="text-sm text-slate-400 text-center py-8">No trainings assigned to this plan.</p>}
               </div>
             </motion.div>

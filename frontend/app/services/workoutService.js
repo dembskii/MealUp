@@ -65,11 +65,10 @@ export async function searchExercises(q, { body_part, advancement, category, ski
 
 // ======================== TRAININGS ========================
 
-export async function getTrainings({ skip = 0, limit = 100, day, training_type, search } = {}) {
+export async function getTrainings({ skip = 0, limit = 100, training_type, search } = {}) {
   const params = new URLSearchParams();
   params.set('skip', skip);
   params.set('limit', limit);
-  if (day != null) params.set('day', day);
   if (training_type) params.set('training_type', training_type);
   if (search) params.set('search', search);
   return request(`${BASE}/trainings?${params}`);

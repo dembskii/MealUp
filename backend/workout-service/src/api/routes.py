@@ -179,7 +179,6 @@ async def get_days_of_week():
 async def get_trainings(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
-    day: Optional[DayOfWeek] = Query(None),
     training_type: Optional[TrainingType] = Query(None),
     search: Optional[str] = Query(None)
 ):
@@ -188,7 +187,6 @@ async def get_trainings(
         trainings = await TrainingService.get_trainings(
             skip=skip,
             limit=limit,
-            day=day,
             training_type=training_type,
             search=search
         )

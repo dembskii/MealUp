@@ -36,7 +36,8 @@ class WorkoutPlanService:
             clients=plan_data.clients or [],
             trainings=plan_data.trainings or [],
             description=plan_data.description,
-            is_public=plan_data.is_public
+            is_public=plan_data.is_public,
+            schedule=plan_data.schedule
         )
 
         plan_dict = workout_plan.model_dump(by_alias=True)

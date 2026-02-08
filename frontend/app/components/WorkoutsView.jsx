@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  TrainingType, SetUnit, DayOfWeek, BodyPart, Advancement
+  TrainingType, SetUnit, BodyPart, Advancement
 } from '../data/types';
 import { generateWorkout } from '../services/geminiService';
 import {
@@ -13,9 +13,12 @@ import {
   getTrainingWithExercises,
 } from '../services/workoutService';
 import {
+  likeWorkout, unlikeWorkout, getLikedWorkouts, checkWorkoutsLikedBulk,
+} from '../services/userService';
+import {
   Dumbbell, Clock, Activity, Plus, Sparkles, X,
   Loader2, Search, Filter, ChevronDown, Award, Edit3,
-  Save, Trash2, Calendar, LayoutGrid, Layers, Info, Hash, Type
+  Save, Trash2, Calendar, LayoutGrid, Layers, Info, Hash, Type, Heart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -74,9 +77,8 @@ export default function Workouts() {
   const [filterTrainingType, setFilterTrainingType] = useState('ALL');
   const [planFilterFrequency, setPlanFilterFrequency] = useState('ALL');
   const [planFilterDuration, setPlanFilterDuration] = useState(300);
-  const [planFilterDay, setPlanFilterDay] = useState('ALL');
   const [newTraining, setNewTraining] = useState({
-    name: '', description: '', day: DayOfWeek.MONDAY,
+    name: '', description: '',
     training_type: TrainingType.CUSTOM, est_time: 3600, exercises: []
   });
   const dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -88,6 +90,9 @@ export default function Workouts() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerBodyPart, setPickerBodyPart] = useState('ALL');
+  const [likedWorkoutIds, setLikedWorkoutIds] = useState(new Set());
+  const [likingInProgress, setLikingInProgress] = useState(new Set());
+  const [sessionCreatedIds, setSessionCreatedIds] = useState(new Set());
 
   // ===================== FETCH DATA ON MOUNT =====================
   const fetchExercises = useCallback(async () => {
@@ -145,6 +150,22 @@ export default function Workouts() {
         ]);
         setTrainings(trainingsData.map(t => populateTraining(t, map)));
         setPlans(plansData);
+
+        // Fetch liked workout status
+        try {
+          const res = await fetch('http://localhost:8000/api/v1/auth/me', { credentials: 'include' });
+          if (res.ok) {
+            const auth = await res.json();
+            const uid = auth.internal_uid;
+            if (uid && trainingsData.length > 0) {
+              const ids = trainingsData.map(t => t._id);
+              const { results } = await checkWorkoutsLikedBulk(uid, ids);
+              setLikedWorkoutIds(new Set(Object.entries(results).filter(([, v]) => v).map(([k]) => k)));
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch liked workouts status:', e);
+        }
       } catch (err) {
         console.error('Failed to load workout data:', err);
       } finally {
@@ -164,13 +185,13 @@ export default function Workouts() {
           name: generated.name,
           exercises: generated.exercises,
           est_time: generated.est_time || 3600,
-          day: generated.day || DayOfWeek.MONDAY,
           training_type: generated.training_type || TrainingType.CUSTOM,
           description: generated.description || null,
         };
         try {
           const saved = await createTraining(payload);
           setTrainings(prev => [populateTraining(saved, exercisesDB), ...prev]);
+          if (saved._id) setSessionCreatedIds(prev => new Set(prev).add(saved._id));
         } catch {
           // Fallback: just show locally
           setTrainings(prev => [populateTraining(generated, exercisesDB), ...prev]);
@@ -279,14 +300,14 @@ export default function Workouts() {
           notes: ex.notes || null,
         })),
         est_time: newTraining.est_time || 3600,
-        day: newTraining.day || DayOfWeek.MONDAY,
         training_type: newTraining.training_type || TrainingType.CUSTOM,
         description: newTraining.description || null,
       };
       const saved = await createTraining(payload);
       setTrainings(prev => [populateTraining(saved, exercisesDB), ...prev]);
+      if (saved._id) setSessionCreatedIds(prev => new Set(prev).add(saved._id));
       setIsWorkoutCreatorOpen(false);
-      setNewTraining({ name: '', description: '', day: DayOfWeek.MONDAY, training_type: TrainingType.CUSTOM, est_time: 3600, exercises: [] });
+      setNewTraining({ name: '', description: '', training_type: TrainingType.CUSTOM, est_time: 3600, exercises: [] });
     } catch (err) {
       console.error('Failed to save training:', err);
     } finally {
@@ -335,6 +356,7 @@ export default function Workouts() {
         name: newPlan.name,
         description: newPlan.description || null,
         trainings: scheduleTrainingIds,
+        schedule: newPlan.schedule,
         is_public: false,
       };
       const saved = await createWorkoutPlan(payload);
@@ -353,7 +375,6 @@ export default function Workouts() {
       _id: training._id,
       name: training.name,
       description: training.description || '',
-      day: training.day,
       training_type: training.training_type,
       est_time: training.est_time,
       exercises: training.exercises.map(ex => ({
@@ -379,7 +400,6 @@ export default function Workouts() {
           notes: ex.notes || null,
         })),
         est_time: editingTraining.est_time,
-        day: editingTraining.day,
         training_type: editingTraining.training_type,
         description: editingTraining.description || null,
       };
@@ -405,13 +425,21 @@ export default function Workouts() {
   };
 
   const handleStartEditPlan = (plan) => {
-    // Distribute flat trainings array into a day-based schedule
-    const schedule = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
-    (plan.trainings || []).forEach(tid => {
-      const t = trainings.find(tr => tr._id === tid);
-      const day = t?.day || 1;
-      schedule[day] = [...(schedule[day] || []), tid];
-    });
+    // Use saved schedule if available, otherwise distribute round-robin
+    let schedule;
+    if (plan.schedule && typeof plan.schedule === 'object') {
+      schedule = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+      Object.entries(plan.schedule).forEach(([day, tids]) => {
+        schedule[parseInt(day)] = [...(tids || [])];
+      });
+    } else {
+      schedule = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+      const trainingsList = plan.trainings || [];
+      trainingsList.forEach((tid, idx) => {
+        const day = (idx % 7) + 1;
+        schedule[day] = [...(schedule[day] || []), tid];
+      });
+    }
     setEditingPlan({
       _id: plan._id,
       name: plan.name,
@@ -435,6 +463,7 @@ export default function Workouts() {
         name: editingPlan.name,
         description: editingPlan.description || null,
         trainings: editPlanTrainingIds,
+        schedule: editingPlan.schedule,
         is_public: editingPlan.is_public,
       };
       const saved = await updateWorkoutPlan(editingPlan._id, payload);
@@ -458,15 +487,53 @@ export default function Workouts() {
     }
   };
 
+  const handleToggleLike = async (e, trainingId) => {
+    e.stopPropagation();
+    if (!currentUserId || likingInProgress.has(trainingId)) return;
+    setLikingInProgress(prev => new Set(prev).add(trainingId));
+    try {
+      const isLiked = likedWorkoutIds.has(trainingId);
+      if (isLiked) {
+        await unlikeWorkout(currentUserId, trainingId);
+        setLikedWorkoutIds(prev => { const s = new Set(prev); s.delete(trainingId); return s; });
+      } else {
+        await likeWorkout(currentUserId, trainingId);
+        setLikedWorkoutIds(prev => new Set(prev).add(trainingId));
+      }
+    } catch (err) {
+      console.error('Failed to toggle like:', err);
+    } finally {
+      setLikingInProgress(prev => { const s = new Set(prev); s.delete(trainingId); return s; });
+    }
+  };
+
   const formatDuration = (seconds) => `${Math.floor(seconds / 60)} min`;
+
+  // Own training IDs: from user's own plans + trainings created this session
+  const ownTrainingIds = useMemo(() => {
+    if (!currentUserId) return new Set();
+    const fromPlans = plans
+      .filter(p => p.trainer_id === currentUserId)
+      .flatMap(p => p.trainings || []);
+    return new Set([...fromPlans, ...sessionCreatedIds]);
+  }, [plans, currentUserId, sessionCreatedIds]);
 
   const getDifficultyColor = (type) => {
     switch (type) {
-      case TrainingType.HIIT: return 'text-orange-600 bg-orange-100/50 border-orange-200';
-      case TrainingType.STRENGTH: return 'text-red-600 bg-red-100/50 border-red-200';
-      case TrainingType.CARDIO: return 'text-blue-600 bg-blue-100/50 border-blue-200';
-      case TrainingType.YOGA: return 'text-green-600 bg-green-100/50 border-green-200';
-      default: return 'text-slate-500 bg-slate-100/50 border-slate-100';
+      case TrainingType.HIIT: return 'text-orange-700 dark:text-orange-300 bg-orange-100 dark:bg-orange-900/30 border-orange-200 dark:border-orange-700/50';
+      case TrainingType.STRENGTH: return 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 border-red-200 dark:border-red-700/50';
+      case TrainingType.CARDIO: return 'text-sky-700 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/30 border-sky-200 dark:border-sky-700/50';
+      case TrainingType.YOGA: return 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700/50';
+      case TrainingType.PUSH: return 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30 border-violet-200 dark:border-violet-700/50';
+      case TrainingType.PULL: return 'text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-700/50';
+      case TrainingType.LEGS: return 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700/50';
+      case TrainingType.UPPER: return 'text-cyan-700 dark:text-cyan-300 bg-cyan-100 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-700/50';
+      case TrainingType.LOWER: return 'text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-900/30 border-teal-200 dark:border-teal-700/50';
+      case TrainingType.FULL_BODY: return 'text-fuchsia-700 dark:text-fuchsia-300 bg-fuchsia-100 dark:bg-fuchsia-900/30 border-fuchsia-200 dark:border-fuchsia-700/50';
+      case TrainingType.HYPERTROPHY: return 'text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/30 border-rose-200 dark:border-rose-700/50';
+      case TrainingType.ENDURANCE: return 'text-lime-700 dark:text-lime-300 bg-lime-100 dark:bg-lime-900/30 border-lime-200 dark:border-lime-700/50';
+      case TrainingType.FLEXIBILITY: return 'text-pink-700 dark:text-pink-300 bg-pink-100 dark:bg-pink-900/30 border-pink-200 dark:border-pink-700/50';
+      default: return 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
     }
   };
 
@@ -491,16 +558,9 @@ export default function Workouts() {
         return acc + (t ? t.est_time / 60 : 0);
       }, 0);
       if (totalDuration > planFilterDuration) return false;
-      if (planFilterDay !== 'ALL') {
-        const planHasDay = (p.trainings || []).some(tid => {
-          const t = trainings.find(tr => tr._id === tid);
-          return t && t.day === planFilterDay;
-        });
-        if (!planHasDay) return false;
-      }
       return true;
     });
-  }, [plans, planSearchQuery, planFilterFrequency, planFilterDuration, planFilterDay, trainings]);
+  }, [plans, planSearchQuery, planFilterFrequency, planFilterDuration, trainings]);
 
   const filteredExercisesForPicker = useMemo(() => {
     return allExercises.filter(ex => {
@@ -570,21 +630,6 @@ export default function Workouts() {
                             {f === 'ALL' ? 'Any' : `${f}d`}
                           </button>
                         ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1"><Calendar className="w-3 h-3" /> Training Day</label>
-                      <div className="flex flex-wrap gap-2">
-                        {['ALL', ...Object.entries(DayOfWeek).map(([k, v]) => ({ label: k.charAt(0) + k.slice(1).toLowerCase(), value: v }))].map(item => {
-                          const val = item === 'ALL' ? 'ALL' : item.value;
-                          const label = item === 'ALL' ? 'All' : item.label;
-                          return (
-                            <button key={val} onClick={() => setPlanFilterDay(val)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${planFilterDay === val ? 'bg-brand-500 text-white border-brand-400 shadow-md' : 'bg-white/50 dark:bg-white/5 text-slate-500 border-transparent hover:border-slate-200'}`}>
-                              {label}
-                            </button>
-                          );
-                        })}
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -714,13 +759,24 @@ export default function Workouts() {
                 onClick={() => setSelectedTraining(training)}
                 className="glass-panel rounded-3xl p-6 relative overflow-hidden group cursor-pointer">
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-white group-hover:text-brand-600 transition-colors">{training.name}</h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(training.training_type)}`}>{training.training_type}</span>
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white group-hover:text-brand-600 transition-colors pr-2">{training.name}</h3>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {currentUserId && !ownTrainingIds.has(training._id) && (
+                      <button
+                        onClick={(e) => handleToggleLike(e, training._id)}
+                        disabled={likingInProgress.has(training._id)}
+                        className={`p-1.5 rounded-xl transition-all ${likedWorkoutIds.has(training._id) ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'text-slate-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10'} ${likingInProgress.has(training._id) ? 'opacity-50' : ''}`}
+                        title={likedWorkoutIds.has(training._id) ? 'Usuń polubienie' : 'Polub trening'}
+                      >
+                        <Heart className={`w-4 h-4 ${likedWorkoutIds.has(training._id) ? 'fill-current' : ''}`} />
+                      </button>
+                    )}
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getDifficultyColor(training.training_type)}`}>{training.training_type}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-slate-500 mb-4">
                   <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-brand-500" /><span>{formatDuration(training.est_time)}</span></div>
                   <div className="flex items-center gap-1"><Activity className="w-4 h-4 text-orange-500" /><span>{training.exercises.length} exercises</span></div>
-                  <div className="flex items-center gap-1 ml-auto"><Calendar className="w-3.5 h-3.5 text-slate-400" /><span className="text-xs">{dayNames[training.day]}</span></div>
                 </div>
                 <div className="space-y-2">
                   {training.exercises.slice(0, 3).map((ex, i) => (
@@ -972,22 +1028,60 @@ export default function Workouts() {
                 <button onClick={() => setPickingForPlanDay(null)} className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                {trainings.map(training => (
-                  <div key={training._id} onClick={() => handleAddToPlanSchedule(training._id)}
-                    className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 dark:hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-brand-500 transition-colors"><Activity className="w-5 h-5" /></div>
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-800 dark:text-white">{training.name}</h4>
-                        <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-[0.2em]">{formatDuration(training.est_time)} • {training.training_type}</p>
+                {(() => {
+                  const ownTrainings = trainings.filter(t => ownTrainingIds.has(t._id));
+                  const likedOnly = trainings.filter(t => likedWorkoutIds.has(t._id) && !ownTrainingIds.has(t._id));
+                  const available = [...ownTrainings, ...likedOnly];
+                  if (available.length === 0) {
+                    return (
+                      <div className="text-center py-16 opacity-60">
+                        <Dumbbell className="w-10 h-10 mx-auto text-slate-300 mb-4" />
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Brak dostępnych treningów</p>
+                        <p className="text-[11px] text-slate-400 mt-2 max-w-xs mx-auto">Stwórz własne treningi lub polub treningi innych użytkowników, aby móc je dodawać do planów.</p>
                       </div>
-                    </div>
-                    <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"><Plus className="w-5 h-5" /></div>
-                  </div>
-                ))}
-                {trainings.length === 0 && (
-                  <div className="text-center py-16 opacity-40"><p className="text-xs font-bold uppercase tracking-widest">No custom sessions found</p><p className="text-[10px] mt-2">Create some workouts first to assign them to a plan.</p></div>
-                )}
+                    );
+                  }
+                  return (
+                    <>
+                      {ownTrainings.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-1">Twoje treningi</p>
+                          {ownTrainings.map(training => (
+                            <div key={training._id} onClick={() => handleAddToPlanSchedule(training._id)}
+                              className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 dark:hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-brand-500/10 rounded-xl flex items-center justify-center text-brand-500 group-hover:text-brand-600 transition-colors"><Dumbbell className="w-5 h-5" /></div>
+                                <div>
+                                  <h4 className="font-bold text-sm text-slate-800 dark:text-white">{training.name}</h4>
+                                  <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-[0.2em]">{formatDuration(training.est_time)} • {training.training_type}</p>
+                                </div>
+                              </div>
+                              <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"><Plus className="w-5 h-5" /></div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {likedOnly.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 pt-3 flex items-center gap-1.5"><Heart className="w-3 h-3 text-red-400" /> Polubione</p>
+                          {likedOnly.map(training => (
+                            <div key={training._id} onClick={() => handleAddToPlanSchedule(training._id)}
+                              className="p-4 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-brand-500/30 hover:bg-brand-500/5 dark:hover:bg-brand-500/5 cursor-pointer flex justify-between items-center group transition-all">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center text-red-400 group-hover:text-red-500 transition-colors"><Heart className="w-5 h-5" /></div>
+                                <div>
+                                  <h4 className="font-bold text-sm text-slate-800 dark:text-white">{training.name}</h4>
+                                  <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-[0.2em]">{formatDuration(training.est_time)} • {training.training_type}</p>
+                                </div>
+                              </div>
+                              <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"><Plus className="w-5 h-5" /></div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </motion.div>
           </div>
@@ -1007,7 +1101,6 @@ export default function Workouts() {
                   <div className="flex items-center gap-3 mt-1">
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(selectedTraining.training_type)}`}>{selectedTraining.training_type?.replace('_', ' ')}</span>
                     <span className="text-[10px] text-slate-400 font-bold">{formatDuration(selectedTraining.est_time)}</span>
-                    <span className="text-[10px] text-slate-400 font-bold">{dayNames[selectedTraining.day]}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1076,13 +1169,6 @@ export default function Workouts() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Day</label>
-                    <select value={editingTraining.day} onChange={e => setEditingTraining({...editingTraining, day: parseInt(e.target.value)})}
-                      className="w-full p-4 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none appearance-none font-medium">
-                      {Object.entries(DayOfWeek).map(([k, v]) => <option key={v} value={v}>{k.charAt(0) + k.slice(1).toLowerCase()}</option>)}
-                    </select>
-                  </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Est. Time (min)</label>
                     <input type="number" value={Math.floor(editingTraining.est_time / 60)} onChange={e => setEditingTraining({...editingTraining, est_time: parseInt(e.target.value) * 60 || 60})}
@@ -1195,62 +1281,92 @@ export default function Workouts() {
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {selectedPlan.description && <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{selectedPlan.description}</p>}
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Layers className="w-3 h-3 text-brand-500" /> Trainings in this plan</label>
-                {(selectedPlan.trainings || []).map((tid, i) => {
-                  const t = trainings.find(tr => tr._id === tid);
-                  const isExpanded = expandedPlanTrainings[`${tid}-${i}`];
-                  return t ? (
-                    <div key={`${tid}-${i}`} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
-                      <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [`${tid}-${i}`]: !prev[`${tid}-${i}`] }))}
-                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/30 dark:hover:bg-white/[0.03] transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-brand-500/10 text-brand-500 rounded-xl"><Activity className="w-5 h-5" /></div>
-                          <div>
-                            <h4 className="font-bold text-slate-800 dark:text-white">{t.name}</h4>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{t.training_type?.replace('_', ' ')} &bull; {formatDuration(t.est_time)} &bull; {dayNames[t.day]}</p>
-                          </div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Calendar className="w-3 h-3 text-brand-500" /> Weekly Breakdown</label>
+                {(() => {
+                  // Build schedule: use saved schedule or fall back to round-robin
+                  const schedule = (() => {
+                    if (selectedPlan.schedule && typeof selectedPlan.schedule === 'object') {
+                      const s = {};
+                      for (let d = 1; d <= 7; d++) s[d] = selectedPlan.schedule[String(d)] || selectedPlan.schedule[d] || [];
+                      return s;
+                    }
+                    const s = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
+                    (selectedPlan.trainings || []).forEach((tid, idx) => { s[(idx % 7) + 1].push(tid); });
+                    return s;
+                  })();
+                  return [1, 2, 3, 4, 5, 6, 7].map(day => {
+                    const dayTids = schedule[day] || [];
+                    return (
+                      <div key={day} className="bg-white/40 dark:bg-white/5 border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden">
+                        <div className="px-4 py-3 flex items-center gap-3 border-b border-white/30 dark:border-white/5 bg-white/30 dark:bg-white/[0.02]">
+                          <span className="w-8 h-8 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center text-[11px] font-black">{dayNames[day].slice(0, 2).toUpperCase()}</span>
+                          <h4 className="font-bold text-sm text-slate-700 dark:text-slate-200">{dayNames[day]}</h4>
+                          <span className="text-[10px] text-slate-400 font-bold ml-auto">{dayTids.length > 0 ? `${dayTids.length} training${dayTids.length > 1 ? 's' : ''}` : 'Rest day'}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
-                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                        </div>
-                      </div>
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                            <div className="px-4 pb-4 space-y-3 border-t border-white/30 dark:border-white/5 pt-3">
-                              {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
-                              {t.exercises.map((ex, ei) => (
-                                <div key={ei} className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
-                                  <div className="flex items-center gap-3 mb-3">
-                                    <Dumbbell className="w-4 h-4 text-brand-500" />
-                                    <div>
-                                      <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
-                                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')} &bull; {ex._exerciseDetails?.advancement || ''}</p>
+                        {dayTids.length > 0 ? (
+                          <div className="p-3 space-y-2">
+                            {dayTids.map((tid, i) => {
+                              const t = trainings.find(tr => tr._id === tid);
+                              const key = `plan-${day}-${tid}-${i}`;
+                              const isExpanded = expandedPlanTrainings[key];
+                              return t ? (
+                                <div key={key} className="bg-white/50 dark:bg-black/10 rounded-xl border border-white/40 dark:border-white/5 overflow-hidden">
+                                  <div onClick={() => setExpandedPlanTrainings(prev => ({ ...prev, [key]: !prev[key] }))}
+                                    className="p-3 flex items-center justify-between cursor-pointer hover:bg-white/40 dark:hover:bg-white/[0.03] transition-colors">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-1.5 bg-brand-500/10 text-brand-500 rounded-lg"><Activity className="w-4 h-4" /></div>
+                                      <div>
+                                        <h5 className="font-bold text-sm text-slate-800 dark:text-white">{t.name}</h5>
+                                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{formatDuration(t.est_time)} &bull; {t.exercises.length} exercises</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${getDifficultyColor(t.training_type)}`}>{t.training_type?.replace('_', ' ')}</span>
+                                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                    {ex.sets.map((set, si) => (
-                                      <div key={si} className="flex items-center gap-2 p-2 bg-white/60 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
-                                        <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
-                                        <span className="text-sm font-bold text-slate-800 dark:text-white">{set.volume}</span>
-                                        <span className="text-[10px] font-bold text-slate-400">{set.units}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  {ex.rest_between_sets > 0 && <p className="text-[10px] text-slate-400 mt-2">Rest: {ex.rest_between_sets}s between sets</p>}
-                                  {ex.notes && <p className="text-xs text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                  <AnimatePresence>
+                                    {isExpanded && (
+                                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                        <div className="px-3 pb-3 space-y-2 border-t border-white/30 dark:border-white/5 pt-3">
+                                          {t.description && <p className="text-xs text-slate-500 dark:text-slate-400 italic mb-2">{t.description}</p>}
+                                          {t.exercises.map((ex, ei) => (
+                                            <div key={ei} className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-white/40 dark:border-white/5">
+                                              <div className="flex items-center gap-2 mb-2">
+                                                <Dumbbell className="w-3.5 h-3.5 text-brand-500" />
+                                                <span className="font-bold text-sm text-slate-800 dark:text-white">{ex._exerciseDetails?.name || 'Unknown'}</span>
+                                                <span className="text-[9px] text-slate-400 font-bold uppercase ml-auto">{(ex._exerciseDetails?.body_part || '').replace('_', ' ')}</span>
+                                              </div>
+                                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                                {ex.sets.map((set, si) => (
+                                                  <div key={si} className="flex items-center gap-1.5 p-1.5 bg-white/60 dark:bg-black/20 rounded-lg border border-white/40 dark:border-white/5">
+                                                    <span className="w-5 h-5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-bold text-slate-400 flex items-center justify-center">{si + 1}</span>
+                                                    <span className="text-xs font-bold text-slate-800 dark:text-white">{set.volume}</span>
+                                                    <span className="text-[9px] font-bold text-slate-400">{set.units}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                              {ex.rest_between_sets > 0 && <p className="text-[9px] text-slate-400 mt-1.5">Rest: {ex.rest_between_sets}s</p>}
+                                              {ex.notes && <p className="text-[10px] text-slate-500 mt-1 italic">{ex.notes}</p>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </div>
-                              ))}
-                            </div>
-                          </motion.div>
+                              ) : (
+                                <div key={key} className="p-2 bg-white/30 dark:bg-white/5 rounded-lg text-xs text-slate-400 italic">Training not found</div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="px-4 py-3 text-[10px] text-slate-400 italic flex items-center gap-2 ml-11">Rest day</div>
                         )}
-                      </AnimatePresence>
-                    </div>
-                  ) : (
-                    <div key={`${tid}-${i}`} className="p-3 bg-white/40 dark:bg-white/5 rounded-xl text-xs text-slate-400 italic">Training {tid.slice(0, 8)}... not found</div>
-                  );
-                })}
+                      </div>
+                    );
+                  });
+                })()}
                 {(!selectedPlan.trainings || selectedPlan.trainings.length === 0) && <p className="text-sm text-slate-400 text-center py-8">No trainings assigned to this plan.</p>}
               </div>
             </motion.div>
