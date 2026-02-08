@@ -105,6 +105,16 @@ class PostSearchResult(BaseModel):
         description="List of image URLs attached to the post",
         examples=[["https://example.com/image1.jpg", "https://example.com/image2.jpg"]]
     )
+    linked_recipes: List[str] = Field(
+        default=[],
+        description="List of linked recipe IDs",
+        examples=[["550e8400-e29b-41d4-a716-446655440000"]]
+    )
+    linked_workouts: List[str] = Field(
+        default=[],
+        description="List of linked workout IDs",
+        examples=[["550e8400-e29b-41d4-a716-446655440001"]]
+    )
     total_likes: int = Field(
         default=0, 
         ge=0, 
