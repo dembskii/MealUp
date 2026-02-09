@@ -139,7 +139,7 @@ async def update_user(
 ):
     """Update user"""
     try:
-        update_data = user_update.model_dump(exclude_unset = True, mode = 'json')
+        update_data = user_update.model_dump(exclude_unset = True)
         user = await UserService.update_user(session, uid, update_data)
         
         if not user:

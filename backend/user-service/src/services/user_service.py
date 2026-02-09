@@ -111,7 +111,7 @@ class UserService:
             user = result.first()
         except Exception as e:
             logger.error(f"Database error while fetching user: {str(e)}")
-            return None
+            raise
 
         if not user:
             return None
@@ -131,7 +131,7 @@ class UserService:
         except Exception as e:
             logger.error(f"Error updating user: {str(e)}")
             await session.rollback()
-            return None
+            raise
 
 
     @staticmethod
