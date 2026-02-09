@@ -30,7 +30,7 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
   };
 
   return (
-    <div className="flex flex-col h-full bg-white/20 dark:bg-slate-900/20 backdrop-blur-sm transition-colors duration-300">
+    <div className="flex flex-col h-full bg-white/60 dark:bg-slate-900/20 backdrop-blur-md border-r border-slate-200/60 dark:border-white/5 transition-colors duration-300">
       {/* Logo */}
       <div className="p-8 flex items-center gap-3">
         <img src="/images/logo.png" alt="MealUp" className="w-8 h-8 drop-shadow-lg" />
@@ -50,7 +50,7 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
             </div>
           </div>
         ) : user ? (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-white/30 dark:bg-white/5 border border-white/30 dark:border-white/5">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-slate-100/80 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
               {(user.name || user.email || '?').charAt(0).toUpperCase()}
             </div>
@@ -83,14 +83,14 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
               className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group relative overflow-hidden ${
                 isActive
                   ? 'liquid-card text-brand-600 dark:text-brand-400 font-bold shadow-lg'
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-slate-800/30 hover:text-slate-700 dark:hover:text-slate-200'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-800/30 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <Icon
                 className={`w-5 h-5 relative z-10 ${
                   isActive
                     ? 'text-brand-500 drop-shadow-sm'
-                    : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
+                    : 'text-slate-500 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-300'
                 }`}
               />
               <span className="relative z-10">{item.label}</span>
@@ -103,7 +103,7 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
       </nav>
 
       {/* Bottom section */}
-      <div className="p-4 border-t border-white/20 dark:border-white/5">
+      <div className="p-4 border-t border-slate-200/50 dark:border-white/5">
         {/* Auth actions */}
         {!isAuthLoading && (
           <div className="mb-4 space-y-2">
@@ -149,8 +149,8 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
             onClick={() => setActiveTab(NavItem.SETTINGS)}
             className={`flex-1 flex items-center gap-3 px-4 py-2.5 transition-all rounded-xl border ${
               activeTab === NavItem.SETTINGS
-                ? 'liquid-card text-brand-600 border-white/50'
-                : 'border-transparent text-slate-500 hover:bg-white/30 hover:text-slate-700'
+                ? 'liquid-card text-brand-600 border-slate-200/50'
+                : 'border-transparent text-slate-600 hover:bg-slate-100/80 hover:text-slate-800'
             }`}
           >
             <Settings className={`w-5 h-5 ${activeTab === NavItem.SETTINGS ? 'text-brand-500' : ''}`} />
@@ -162,7 +162,7 @@ export default function Navigation({ activeTab, setActiveTab, currentTheme, setT
             className={`p-2.5 rounded-xl transition-all duration-300 border ${
               isDark
                 ? 'bg-slate-800/50 text-brand-400 border-white/10 shadow-inner'
-                : 'bg-white/50 text-orange-400 border-white/40 shadow-sm hover:bg-white/80'
+                : 'bg-white/70 text-orange-400 border-slate-200/50 shadow-sm hover:bg-white/90'
             }`}
             title="Toggle Theme"
           >
