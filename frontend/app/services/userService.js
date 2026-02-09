@@ -77,12 +77,33 @@ export async function batchGetDisplayNames(uids) {
 
 export default { getUserById, getUserDisplayName, batchGetDisplayNames };
 
-// ======================== LIKED WORKOUTS ========================
+// ======================== SHARED REQUEST OPTIONS ========================
 
 const defaultOpts = {
   credentials: 'include',
   headers: { 'Content-Type': 'application/json' },
 };
+
+// ======================== USER UPDATE ========================
+
+/**
+ * Update a user's profile.
+ * PUT /user/users/{uid}
+ */
+export async function updateUser(uid, data) {
+  const res = await fetch(`${ENDPOINTS.USERS}/users/${uid}`, {
+    ...defaultOpts,
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Update user failed ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// ======================== LIKED WORKOUTS ========================
 
 /**
  * Like a workout for a user.
