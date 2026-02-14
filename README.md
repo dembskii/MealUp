@@ -249,8 +249,7 @@ MealUp/
 
 ## Contributing
 
-This is an active development project for university coursework (Semester 5 - Team Project).
-
+This is an active project as part of a Bachelor’s Degree for university coursework (Semester 5 - Team Project).
 **Current Focus**: 
 - Implementing payment service with Stripe
 - Building analytics and tracking features
