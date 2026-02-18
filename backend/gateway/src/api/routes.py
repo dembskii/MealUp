@@ -49,8 +49,9 @@ async def get_services():
         "auth_service": settings.AUTH_SERVICE_URL,
         "user_service": settings.USER_SERVICE_URL,
         "recipe_service": settings.RECIPE_SERVICE_URL,
-        "user_service": settings.USER_SERVICE_URL,
+        "workout_service": settings.WORKOUT_SERVICE_URL,
         "forum_service": settings.FORUM_SERVICE_URL,
+        "analytics_service": settings.ANALYTICS_SERVICE_URL,
     }
 
 
@@ -184,6 +185,33 @@ async def proxy_forum_root(request: Request, headers: Dict = Depends(get_auth_he
     return await proxy.forward_request(
         service_name="forum",
         path="/forum",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+# Analytics Service Proxy Routes
+@router.api_route("/analytics/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_analytics(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy all requests to analytics service"""
+    return await proxy.forward_request(
+        service_name="analytics",
+        path=f"/analytics/{path}",
+        method=request.method,
+        headers=headers,
+        body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
+        params=dict(request.query_params)
+    )
+
+
+@router.api_route("/analytics", methods=["GET", "POST"])
+async def proxy_analytics_root(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy requests to analytics service root"""
+    return await proxy.forward_request(
+        service_name="analytics",
+        path="/analytics",
         method=request.method,
         headers=headers,
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
