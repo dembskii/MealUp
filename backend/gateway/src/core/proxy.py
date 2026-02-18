@@ -20,6 +20,7 @@ class ServiceProxy:
             "recipe": settings.RECIPE_SERVICE_URL,
             "workout": settings.WORKOUT_SERVICE_URL,
             "forum": settings.FORUM_SERVICE_URL,
+            "analytics": settings.ANALYTICS_SERVICE_URL,
         }
     
     async def forward_request(
