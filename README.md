@@ -13,6 +13,9 @@ MealUp is a comprehensive social platform combining:
 - **Community** – Forum with posts, comments, likes, trending algorithm
 - **Personal tracking** – User profiles, preferences, progress monitoring (in development)
 - **Authentication** – Secure Auth0 integration with JWT tokens
+- **AI Assistants** – Conversational AI for guided recipe and workout creation
+- **RAG System** – Retrieval-Augmented Generation for intelligent, context-aware recommendations
+- **AI Image Generation** – Automatic recipe photo generation via open-source text-to-image model on save
 
 **Built with microservices architecture** for scalability, featuring independent services for recipes, workouts, forum, and user management, all coordinated through a central API Gateway.
 
@@ -27,6 +30,12 @@ MealUp is a comprehensive social platform combining:
 - **Forum Service** (Port 8007) - Posts, comments, likes, trending algorithm, search
 - **Frontend UI** - Complete navigation, dashboard, recipes, workouts, community views
 - **Infrastructure** - Docker Compose setup, health checks, request logging
+
+### 🤖 AI Features (In Development)
+- **AI Recipe Assistant** - Conversational assistant guiding users through recipe creation step-by-step
+- **AI Workout Assistant** - Conversational assistant for building personalized training plans
+- **RAG System** - Retrieval-Augmented Generation over recipe & exercise knowledge base for smart suggestions
+- **Text-to-Image Generation** - Open-source model (e.g. Stable Diffusion) auto-generates recipe cover photos on database save
 
 ### 🔄 Partially Implemented
 - Payment Service (Docker setup only, no implementation)
@@ -53,9 +62,13 @@ API Gateway (Port 8000) - Single entry point, routing & auth
 ├── ✅ User Service (Port 8002)
 │   └── PostgreSQL (shared)
 ├── ✅ Recipe Service (Port 8003)
-│   └── MongoDB (shared)
+│   ├── MongoDB (shared)
+│   ├── 🤖 AI Recipe Assistant (LLM-powered)
+│   ├── 🤖 Text-to-Image (auto recipe photo on save)
+│   └── 🤖 RAG Engine (vector store + retrieval)
 ├── ✅ Workout Service (Port 8004)
-│   └── MongoDB (shared)
+│   ├── MongoDB (shared)
+│   └── 🤖 AI Workout Assistant (LLM-powered)
 ├── 🔄 Payment Service (Port 8005)
 │   └── PostgreSQL (shared)
 ├── 🔄 Analytics Service (Port 8006)
@@ -65,7 +78,7 @@ API Gateway (Port 8000) - Single entry point, routing & auth
 └── 🔄 Notification Service (Port 8008)
     └── Redis
 
-✅ = Fully Implemented  |  🔄 = Partial/Docker Only
+✅ = Fully Implemented  |  🔄 = Partial/Docker Only  |  🤖 = AI Feature
 ```
 
 ## Microservices
@@ -75,8 +88,8 @@ API Gateway (Port 8000) - Single entry point, routing & auth
 | **API Gateway** | 8000 | Redis | ✅ | Request routing, proxy, logging, health checks |
 | **Auth Service** | 8001 | Redis | ✅ | Auth0 integration, JWT tokens, session management |
 | **User Service** | 8002 | PostgreSQL | ✅ | User CRUD, profiles, Auth0 sync, preferences |
-| **Recipe Service** | 8003 | MongoDB | ✅ | Recipes, ingredients, search, filtering, macros |
-| **Workout Service** | 8004 | MongoDB | ✅ | Exercises, trainings, workout plans, categories |
+| **Recipe Service** | 8003 | MongoDB | ✅ 🤖 | Recipes, ingredients, search, macros; **AI assistant**, **text-to-image**, **RAG** |
+| **Workout Service** | 8004 | MongoDB | ✅ 🤖 | Exercises, trainings, workout plans; **AI workout assistant** |
 | **Forum Service** | 8007 | PostgreSQL | ✅ | Posts, comments, likes, trending, search |
 | **Payment Service** | 8005 | PostgreSQL | 🔄 | Docker setup only (planned: Stripe) |
 | **Analytics Service** | 8006 | MongoDB | 🔄 | Docker setup only (planned: tracking) |
@@ -95,12 +108,22 @@ API Gateway (Port 8000) - Single entry point, routing & auth
 - **Ingredient Database**: 500+ ingredients with macro information (calories, protein, carbs, fats)
 - **Search & Filter**: Find recipes by name, author, ingredients, or dietary requirements
 - **Macro Tracking**: Automatic calculation of nutritional values
+- **🤖 AI Recipe Assistant**: Conversational LLM assistant that guides users through building a recipe step-by-step — suggests ingredients, proportions, and preparation steps based on user preferences
+- **🤖 Automatic Recipe Photos**: On every recipe save, an open-source text-to-image model (Stable Diffusion) generates a cover photo automatically from the recipe name and description — no manual upload required
+- **🤖 RAG-Powered Suggestions**: A retrieval-augmented generation pipeline indexes the recipe and ingredient knowledge base, enabling the assistant to ground its answers in real data from the platform
 
 ### 💪 Workout & Training
 - **Exercise Library**: Comprehensive database with body part targeting, advancement levels, categories
 - **Training Plans**: Create structured training sessions with exercises, sets, reps, and rest periods
 - **Workout Plans**: Organize trainings by day of week and training type (strength, cardio, etc.)
 - **Filtering**: Advanced search by body part, difficulty, exercise category
+- **🤖 AI Workout Assistant**: Conversational AI assistant that helps users compose personalized training plans — recommends exercises based on goals, fitness level, and available equipment, powered by the same RAG system
+
+### 🤖 AI & Machine Learning
+- **AI Assistants**: Two domain-specific chat assistants (recipe & workout) built on top of an LLM, integrated directly into the UI
+- **RAG System**: Vector-store retrieval (over recipes, exercises, and nutritional data) feeds context to the LLM, reducing hallucinations and providing accurate, platform-specific answers
+- **Text-to-Image Pipeline**: Open-source generative model generates food photography-style images automatically when a recipe is persisted — images are stored alongside recipe metadata in MongoDB
+- **Prompt Engineering**: Carefully crafted system prompts and retrieval strategies ensure assistants stay focused on health and fitness topics
 
 ### 👥 Community & Social
 - **Forum Posts**: Create and browse community posts with rich content
@@ -124,11 +147,17 @@ API Gateway (Port 8000) - Single entry point, routing & auth
 - PostgreSQL 16 (User, Forum, Payment services - shared instance)
 - MongoDB 7 (Recipe, Workout, Analytics services - shared instance)
 - Redis 7 (Auth sessions, Notifications - separate instances)
+- Vector Store (RAG pipeline — embeddings index over recipes & exercises)
 
 **Authentication**: Auth0, JWT tokens, session management  
 **Infrastructure**: Docker, Docker Compose  
 **API**: RESTful APIs, OpenAPI/Swagger documentation  
 **Shared Libraries**: Common auth guard module for microservices  
+**AI / ML**:
+- LLM integration (OpenAI-compatible API) for recipe & workout assistants
+- RAG pipeline: embedding model + vector retrieval + prompt augmentation
+- Text-to-image: open-source Stable Diffusion model for automatic recipe cover photos
+- Prompt engineering & context management for domain-focused assistants
 
 ## Quick Start
 
@@ -210,11 +239,21 @@ MealUp/
 - ✅ Recipe search & filtering
 - ✅ Recipe browsing UI
 
+### Phase 3b: AI Recipe Features 🔄 IN PROGRESS
+- 🔄 AI Recipe Assistant (LLM + RAG)
+- 🔄 RAG pipeline over recipe & ingredient knowledge base
+- 🔄 Text-to-image recipe photo generation (Stable Diffusion)
+- ⏳ Assistant UI integrated into recipe creation flow
+
 ### Phase 4: Workouts & Training ✅ COMPLETED
 - ✅ Exercise library (body parts, advancement levels)
 - ✅ Training plan builder
 - ✅ Workout plan management
 - ✅ Workout UI component
+
+### Phase 4b: AI Workout Features 🔄 IN PROGRESS
+- 🔄 AI Workout Assistant (LLM + shared RAG system)
+- ⏳ Assistant UI integrated into workout plan creation flow
 
 ### Phase 5: Community & Forum ✅ COMPLETED
 - ✅ Forum posts & comments
@@ -251,6 +290,9 @@ MealUp/
 
 This is an active project as part of a Bachelor’s Degree for university coursework (Semester 5 - Team Project).
 **Current Focus**: 
+- 🤖 Building AI Recipe & Workout Assistants with RAG
+- 🤖 Integrating text-to-image (Stable Diffusion) for automatic recipe photos
+- 🤖 Setting up vector store and embedding pipeline for RAG
 - Implementing payment service with Stripe
 - Building analytics and tracking features
 - Adding notification system
