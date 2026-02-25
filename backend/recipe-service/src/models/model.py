@@ -130,7 +130,6 @@ class RecipeCreate(BaseModel):
     ingredients: List[WeightedIngredient] = Field(..., min_length=1)
     prepare_instruction: List[str] = Field(..., min_length=1, description="List of instruction steps")
     time_to_prepare: int = Field(..., gt=0, description="Time in seconds")
-    image: Optional[str] = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -149,7 +148,6 @@ class RecipeCreate(BaseModel):
                     "Cook for 20 minutes"
                 ],
                 "time_to_prepare": 1200,
-                "images": ["https://example.com/recipe.jpg"],
             }
         }
     )
@@ -160,7 +158,6 @@ class RecipeUpdate(BaseModel):
     ingredients: Optional[List[WeightedIngredient]] = None
     prepare_instruction: Optional[str] = Field(None, min_length=1)
     time_to_prepare: Optional[int] = Field(None, gt=0)
-    image: Optional[str] = None
 
     model_config = ConfigDict(
         json_schema_extra={
