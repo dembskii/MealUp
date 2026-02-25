@@ -27,7 +27,13 @@ class Settings(BaseSettings):
     AUTH0_DOMAIN: str
     AUTH0_AUDIENCE: Optional[str] = None
     ALGORITHMS: str
+
+    #AI section
     OPEN_ROUTER_API_KEY: str
+    OPENROUTER_URL: str
+    MODEL: str
+
+
     
     # Alias for consistency with mongodb.py
     @property
