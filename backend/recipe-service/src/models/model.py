@@ -92,7 +92,7 @@ class Recipe(BaseModel):
     ingredients: List[WeightedIngredient] = Field(..., min_length=1, description="List of weighted ingredients")
     prepare_instruction: List[str] = Field(..., min_length=1, description="Step-by-step preparation instructions")
     time_to_prepare: int = Field(..., gt=0, description="Time to prepare in seconds")
-    images: Optional[List[str]] = Field(None, description="List of recipe image URLs")
+    image: Optional[str] = Field(None, description="Recipe Image in base64 format")
     total_likes: int = Field(default=0, ge=0, description="Total number of likes")
     created_at: datetime = Field(default_factory=datetime.utcnow, alias="_created_at")
     updated_at: datetime = Field(default_factory=datetime.utcnow, alias="_updated_at")
@@ -130,7 +130,7 @@ class RecipeCreate(BaseModel):
     ingredients: List[WeightedIngredient] = Field(..., min_length=1)
     prepare_instruction: List[str] = Field(..., min_length=1, description="List of instruction steps")
     time_to_prepare: int = Field(..., gt=0, description="Time in seconds")
-    images: Optional[List[str]] = None
+    image: Optional[str] = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -160,7 +160,7 @@ class RecipeUpdate(BaseModel):
     ingredients: Optional[List[WeightedIngredient]] = None
     prepare_instruction: Optional[str] = Field(None, min_length=1)
     time_to_prepare: Optional[int] = Field(None, gt=0)
-    images: Optional[List[str]] = None
+    image: Optional[str] = None
 
     model_config = ConfigDict(
         json_schema_extra={
