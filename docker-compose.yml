@@ -175,6 +175,9 @@ services:
       - AUTH0_DOMAIN=${AUTH0_DOMAIN}
       - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
       - ALGORITHMS=${ALGORITHMS}
+      - OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY}
+      - OPENROUTER_URL=${OPENROUTER_URL}
+      - MODEL=${MODEL}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
