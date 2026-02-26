@@ -3,37 +3,6 @@
 .git
 .github
 
-<<<<<<< Updated upstream
-=======
-# Docs
-README.md
-*.md
-
-# Env
-.env.local
-.env.*.local
-
-# Node.js
-node_modules/
-npm-debug.log
-yarn-error.log
-.next/
-
-# Python
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.coverage
-htmlcov/
-
->>>>>>> Stashed changes
 # IDE
 .vscode/
 .idea/
