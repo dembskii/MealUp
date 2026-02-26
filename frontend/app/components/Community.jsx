@@ -1159,8 +1159,8 @@ function PostFormModal({ onClose, onSubmit, editPost, currentUserId, authorName 
                           }}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-3 transition-colors"
                         >
-                          {r.images?.[0] ? (
-                            <img src={r.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                          {r.image ? (
+                            <img src={r.image} alt="" className="w-8 h-8 rounded-lg object-cover" />
                           ) : (
                             <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
                               <ChefHat className="w-4 h-4 text-orange-500" />
@@ -1738,7 +1738,7 @@ export default function Community() {
       <AnimatePresence>
         {detailPopup?.type === 'recipe' && (() => {
           const recipe = detailPopup.data;
-          const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/800/500`;
+          const imageUrl = recipe.image || `https://picsum.photos/seed/${recipe._id}/800/500`;
           return (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDetailPopup(null)}

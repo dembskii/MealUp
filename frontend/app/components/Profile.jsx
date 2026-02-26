@@ -716,7 +716,7 @@ export default function Profile() {
 
   function RecipeGridItem({ recipe }) {
     const macros = calculateMacros(recipe);
-    const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/400/300`;
+    const imageUrl = recipe.image || `https://picsum.photos/seed/${recipe._id}/400/300`;
     return (
       <div
         onClick={() => setSelectedRecipe(recipe)}
@@ -935,7 +935,7 @@ export default function Profile() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {likedRecipes.map(recipe => {
                       const macros = calculateMacros(recipe);
-                      const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/400/300`;
+                      const imageUrl = recipe.image || `https://picsum.photos/seed/${recipe._id}/400/300`;
                       return (
                         <motion.div key={`liked-recipe-${recipe._id}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}
                           onClick={() => setSelectedRecipe(recipe)}
@@ -1687,7 +1687,7 @@ export default function Profile() {
       <AnimatePresence>
         {selectedRecipe && (() => {
           const macros = calculateMacros(selectedRecipe);
-          const imageUrl = selectedRecipe.images?.[0] || `https://picsum.photos/seed/${selectedRecipe._id}/800/500`;
+          const imageUrl = selectedRecipe.image || `https://picsum.photos/seed/${selectedRecipe._id}/800/500`;
           return (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedRecipe(null)}

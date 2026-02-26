@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';import { createPortal } from "react-dom";import axios from 'axios';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';import { createPortal } from "react-dom";import axios from 'axios';
 import { ENDPOINTS } from '../config/network';
 import RecipeCreator from './Recipe/RecipeCreator';
-import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2, Utensils, ChevronDown } from 'lucide-react';
+import { Search, Clock, Flame, ChefHat, Plus, X, Loader2, Filter, Heart, ArrowRight, CheckCircle2, Utensils, ChevronDown, Sparkles, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { likeRecipe as userLikeRecipe, unlikeRecipe as userUnlikeRecipe, checkRecipesLikedBulk, batchGetDisplayNames } from '../services/userService';
 
@@ -89,6 +89,8 @@ export default function Recipes() {
   const [likedRecipeIds, setLikedRecipeIds] = useState(new Set());
   const [likingInProgress, setLikingInProgress] = useState(new Set());
   const [authorNames, setAuthorNames] = useState({});
+  const [imageGenToast, setImageGenToast] = useState(null);
+  const pollingRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -220,8 +222,29 @@ export default function Recipes() {
     }
   };
 
+  const pollForImage = useCallback(async (recipeId, recipeName) => {
+    setImageGenToast({ recipeId, recipeName, status: 'generating' });
+    const maxAttempts = 60;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const { data } = await api.get(`/${recipeId}`);
+        if (data.image) {
+          setRecipes(prev => prev.map(r => r._id === recipeId ? { ...r, image: data.image } : r));
+          setImageGenToast({ recipeId, recipeName, status: 'done' });
+          setTimeout(() => setImageGenToast(prev => prev?.recipeId === recipeId ? null : prev), 4000);
+          return;
+        }
+      } catch (err) {
+        console.warn('Image poll error:', err);
+      }
+    }
+    setImageGenToast(null);
+  }, []);
+
   const handleRecipeCreated = (newRecipe) => {
     setRecipes(prev => [newRecipe, ...prev]);
+    pollForImage(newRecipe._id, newRecipe.name);
   };
 
   const getFilteredRecipes = () => {
@@ -370,7 +393,7 @@ export default function Recipes() {
           {filteredRecipes.length > 0 ? (
             filteredRecipes.map((recipe) => {
               const macros = calculateMacros(recipe);
-              const imageUrl = recipe.images?.[0] || `https://picsum.photos/seed/${recipe._id}/400/300`;
+              const imageUrl = recipe.image || `https://picsum.photos/seed/${recipe._id}/400/300`;
               return (
                 <motion.div key={recipe._id} onClick={() => setSelectedRecipe(recipe)}
                   initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} whileHover={{ y: -5 }}
@@ -432,7 +455,7 @@ export default function Recipes() {
       <AnimatePresence>
         {selectedRecipe && (() => {
           const macros = calculateMacros(selectedRecipe);
-          const imageUrl = selectedRecipe.images?.[0] || `https://picsum.photos/seed/${selectedRecipe._id}/800/500`;
+          const imageUrl = selectedRecipe.image || `https://picsum.photos/seed/${selectedRecipe._id}/800/500`;
           return (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedRecipe(null)}
@@ -532,6 +555,75 @@ export default function Recipes() {
             </div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* Image Generation Toast */}
+      <AnimatePresence>
+        {imageGenToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 80, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed bottom-8 right-8 z-[80] max-w-sm"
+          >
+            <div className="glass-panel bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-white/50 dark:border-white/10 p-5 flex items-start gap-4">
+              {imageGenToast.status === 'generating' ? (
+                <>
+                  <div className="relative shrink-0">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+                      className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 flex items-center justify-center shadow-lg shadow-orange-500/30"
+                    >
+                      <Camera className="w-6 h-6 text-white" />
+                    </motion.div>
+                    <motion.div
+                      animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
+                      transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-amber-400 to-rose-500"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 dark:text-white leading-tight">
+                      Your dish is posing for its portrait!
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Our AI artist is painting <span className="font-semibold text-brand-500">{imageGenToast.recipeName}</span> — sit tight, masterpiece incoming...
+                    </p>
+                    <div className="mt-3 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: '0%' }}
+                        animate={{ width: '100%' }}
+                        transition={{ duration: 120, ease: 'linear' }}
+                        className="h-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 rounded-full"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <motion.div
+                    initial={{ scale: 0, rotate: -15 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                    className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-brand-500 flex items-center justify-center shadow-lg shadow-brand-500/30 shrink-0"
+                  >
+                    <Sparkles className="w-6 h-6 text-white" />
+                  </motion.div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 dark:text-white">
+                      Masterpiece served!
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      <span className="font-semibold text-brand-500">{imageGenToast.recipeName}</span> just got its glamour shot.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Recipe Creator Modal */}
