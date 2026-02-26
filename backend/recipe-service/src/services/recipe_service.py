@@ -124,7 +124,7 @@ class RecipeService:
             ingredients=recipe_data.ingredients,
             prepare_instruction=recipe_data.prepare_instruction,
             time_to_prepare=recipe_data.time_to_prepare,
-            images=recipe_data.images
+            image=None,
         )
 
         recipe_dict = recipe.model_dump(by_alias=True)

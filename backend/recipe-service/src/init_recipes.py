@@ -12,8 +12,6 @@ Run from the src/ directory:
 import asyncio
 import sys
 import uuid
-import random
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -1828,7 +1826,7 @@ async def init_recipes():
                 prepare_instruction=r["prepare_instruction"],
                 time_to_prepare=r["time_to_prepare"],
                 total_likes=r.get("total_likes", 0),
-                images=r.get("images"),
+                image=r.get("image", None)
             )
             docs.append(recipe.model_dump(by_alias=True))
 
