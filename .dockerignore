@@ -1,37 +1,7 @@
 
 # Git
 .git
-.gitignore
 .github
-
-# Docs
-README.md
-*.md
-
-# Env
-.env
-.env.local
-.env.*.local
-
-# Node.js
-node_modules/
-npm-debug.log
-yarn-error.log
-.next/
-
-# Python
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.coverage
-htmlcov/
 
 # IDE
 .vscode/
@@ -41,17 +11,10 @@ htmlcov/
 *~
 .DS_Store
 
-# Docker
-.docker/
-docker-compose.override.yml
-Dockerfile*
-
-# Testing
-.pytest_cache/
-coverage/
-.nyc_output/
-
 # Misc
 .cache
-dist/
-build/
+.coverage
+htmlcov/
+coverage/
+.nyc_output/
+.pytest_cache/
