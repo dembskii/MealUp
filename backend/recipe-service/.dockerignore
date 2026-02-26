@@ -29,4 +29,9 @@ README.md
 tests/
 .pytest.ini
 conftest.py
-lighthouse.py
+node_modules/
+*.jpg
+*.jpeg
+*.png
+temp/
+cache/

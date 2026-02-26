@@ -29,4 +29,3 @@ README.md
 tests/
 .pytest.ini
 conftest.py
-lighthouse.py
