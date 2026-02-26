@@ -17,9 +17,7 @@ yarn-error.log*
 *.swp
 *.swo
 *~
-README.md
-.git
-.gitignore
+*.md
 coverage/
 .jest_cache/
 .eslintcache
