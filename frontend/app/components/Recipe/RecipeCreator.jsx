@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { ENDPOINTS } from "../../config/network";
-import { X, Plus, Minus, Trash2, Clock, ChefHat, Image, Loader2, Save, Search, ChevronDown } from "lucide-react";
+import { X, Plus, Minus, Trash2, Clock, ChefHat, Loader2, Save, Search, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = ENDPOINTS.RECIPES;
@@ -31,7 +31,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
     name: "",
     prepare_instruction: [""],
     time_to_prepare: 30,
-    images: [],
   });
   const [ingredients, setIngredients] = useState([
     { ingredient_id: "", capacity: "g", quantity: 100 },
@@ -39,7 +38,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
   const [availableIngredients, setAvailableIngredients] = useState([]);
   const [searchTerms, setSearchTerms] = useState({});
   const [dropdownOpen, setDropdownOpen] = useState({});
-  const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [ingredientsLoading, setIngredientsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -113,17 +111,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
     setSearchTerms({ ...searchTerms, [index]: "" });
   };
 
-  const handleAddImage = () => {
-    if (imageUrl.trim()) {
-      setFormData({ ...formData, images: [...formData.images, imageUrl.trim()] });
-      setImageUrl("");
-    }
-  };
-
-  const handleRemoveImage = (index) => {
-    setFormData({ ...formData, images: formData.images.filter((_, i) => i !== index) });
-  };
-
   const handleAddStep = () => {
     setFormData({ ...formData, prepare_instruction: [...formData.prepare_instruction, ""] });
   };
@@ -154,7 +141,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
       ingredients: ingredients.map((ing) => ({ ingredient_id: ing.ingredient_id, capacity: ing.capacity, quantity: ing.quantity })),
       prepare_instruction: formData.prepare_instruction.map((s) => s.trim()),
       time_to_prepare: formData.time_to_prepare * 60,
-      images: formData.images.length > 0 ? formData.images : null,
     };
 
     try {
@@ -368,35 +354,6 @@ export default function RecipeCreator({ onClose, onRecipeCreated }) {
               </div>
             </div>
 
-            {/* Images */}
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                <Image className="w-3 h-3" /> Recipe Images
-              </label>
-              <div className="flex gap-2 mb-3">
-                <input type="url" placeholder="Image URL" value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="flex-1 p-3 liquid-input rounded-2xl text-sm text-slate-800 dark:text-white outline-none placeholder-slate-400" />
-                <button type="button" onClick={handleAddImage}
-                  className="liquid-btn liquid-btn-secondary px-5 py-3 rounded-2xl text-sm font-bold">
-                  Add
-                </button>
-              </div>
-              {formData.images.length > 0 && (
-                <div className="grid grid-cols-3 gap-3">
-                  {formData.images.map((img, idx) => (
-                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-white/20 dark:border-white/10">
-                      <img src={img} alt={`Recipe ${idx}`} className="w-full h-24 object-cover"
-                        onError={(e) => { e.target.src = "https://via.placeholder.com/150?text=Invalid+URL"; }} />
-                      <button type="button" onClick={() => handleRemoveImage(idx)}
-                        className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Footer */}
