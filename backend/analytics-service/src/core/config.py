@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     DAILY_LOG_COLLECTION: str = "daily_logs"
     MEAL_ENTRIES_COLLECTION: str = "meal_entries"
 
+    # Inter-service communication
+    RECIPE_SERVICE_URL: str
+
     # Auth0
     AUTH0_DOMAIN: str
     AUTH0_AUDIENCE: Optional[str] = None
