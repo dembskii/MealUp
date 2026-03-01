@@ -214,9 +214,12 @@ services:
       - AUTH0_DOMAIN=${AUTH0_DOMAIN}
       - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
       - ALGORITHMS=${ALGORITHMS}
+      - RECIPE_SERVICE_URL=${RECIPE_SERVICE_URL}
     depends_on:
       shared-mongo-db:
         condition: service_healthy
+      recipe-service:
+        condition: service_started
     networks:
       - mealup-network
 
