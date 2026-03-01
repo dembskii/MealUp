@@ -13,11 +13,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_user_id_from_header(x_user_id: Optional[str] = Header(None)) -> str:
-    """Extract user ID from header (set by gateway after auth)"""
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    return x_user_id
+def get_user_id(x_user_id: Optional[str], token_payload: Dict) -> str:
+    """Get user ID from X-User-Id header (set by gateway) or fall back to JWT sub claim.
+
+    Priority:
+    1. X-User-Id header – internal app UID forwarded by the gateway from session
+    2. token_payload["sub"] – Auth0 subject from the validated JWT
+    """
+    if x_user_id:
+        return x_user_id
+    sub = token_payload.get("sub")
+    if sub:
+        logger.info(f"No X-User-Id header, falling back to JWT sub: {sub}")
+        return sub
+    raise HTTPException(status_code=401, detail="Unable to determine user identity")
 
 
 # ============ DAILY LOG ENDPOINTS ============
@@ -29,7 +38,7 @@ async def get_daily_log(
     token_payload: Dict = Depends(require_auth),
 ):
     """Get the daily nutrition log for a specific date, including all meals."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
     validate_date_format(date)
 
     daily_log = await DailyLogService.get_or_create_daily_log(user_id, date)
@@ -49,7 +58,7 @@ async def get_daily_logs_range(
     token_payload: Dict = Depends(require_auth),
 ):
     """Get daily summaries for a date range."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
     validate_date_format(date_from)
     validate_date_format(date_to)
     validate_date_range(date_from, date_to)
@@ -77,7 +86,7 @@ async def update_daily_goals(
     token_payload: Dict = Depends(require_auth),
 ):
     """Set or update daily calorie/macro goals."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
     validate_date_format(date)
 
     updated_log = await DailyLogService.update_goals(user_id, date, goals)
@@ -99,7 +108,7 @@ async def create_meal_entry(
     token_payload: Dict = Depends(require_auth),
 ):
     """Register a new meal entry (breakfast, lunch, dinner, snack)."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
     validate_date_format(meal_data.date)
 
     try:
@@ -119,7 +128,7 @@ async def get_meals_for_date(
     token_payload: Dict = Depends(require_auth),
 ):
     """Get all meal entries for a specific date."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
     validate_date_format(date)
 
     meals = await MealEntryService.get_meals_for_date(user_id, date)
@@ -133,7 +142,7 @@ async def get_meal_entry(
     token_payload: Dict = Depends(require_auth),
 ):
     """Get a specific meal entry by ID."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
 
     entry = await MealEntryService.get_meal_entry(entry_id, user_id)
     if not entry:
@@ -149,7 +158,7 @@ async def update_meal_entry(
     token_payload: Dict = Depends(require_auth),
 ):
     """Update a meal entry."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
 
     entry = await MealEntryService.update_meal_entry(entry_id, update_data, user_id)
     if not entry:
@@ -167,7 +176,7 @@ async def delete_meal_entry(
     token_payload: Dict = Depends(require_auth),
 ):
     """Delete a meal entry."""
-    user_id = get_user_id_from_header(x_user_id)
+    user_id = get_user_id(x_user_id, token_payload)
 
     deleted = await MealEntryService.delete_meal_entry(entry_id, user_id)
     if not deleted:
