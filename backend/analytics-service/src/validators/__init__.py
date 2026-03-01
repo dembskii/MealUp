@@ -1,6 +1,18 @@
 import re
 from fastapi import HTTPException
 
+from src.validators.meal_entry import (
+    MealIngredientCreate,
+    MealEntryCreate,
+    MealEntryUpdate,
+    MealEntryResponse,
+)
+from src.validators.daily_log import (
+    DailyGoalsUpdate,
+    DailyLogResponse,
+    DailySummary,
+)
+
 
 def validate_date_format(date_str: str) -> str:
     """Validate that the date string is in YYYY-MM-DD format and return it."""
