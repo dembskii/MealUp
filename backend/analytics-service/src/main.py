@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from src.core.config import settings
 from src.db.mongodb import connect_to_mongodb, disconnect_from_mongodb
+from src.services.recipe_client import close_client as close_recipe_client
 from src.api.routes import router as analytics_router
 import logging
 
@@ -20,7 +21,8 @@ async def lifespan(app: FastAPI):
     # Connect to MongoDB
     await connect_to_mongodb()
     yield
-    # Disconnect from MongoDB
+    # Cleanup
+    await close_recipe_client()
     await disconnect_from_mongodb()
     logger.info("Server has been stopped")
 
