@@ -2,11 +2,8 @@ import logging
 from typing import Optional, Dict
 from fastapi import APIRouter, HTTPException, Query, Header, Depends
 
-from src.models.model import (
-    MealEntryCreate, MealEntryUpdate, MealEntryResponse,
-    DailyLogResponse, DailyGoalsUpdate, DailySummary,
-    MealEntryResponse,
-)
+from src.validators.meal_entry import MealEntryCreate, MealEntryUpdate, MealEntryResponse
+from src.validators.daily_log import DailyLogResponse, DailyGoalsUpdate, DailySummary
 from src.services.analytics_service import DailyLogService, MealEntryService
 from src.validators import validate_date_format, validate_date_range
 
@@ -108,6 +105,8 @@ async def create_meal_entry(
     try:
         entry = await MealEntryService.create_meal_entry(meal_data, user_id)
         return entry.model_dump(by_alias=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error creating meal entry: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to create meal entry")
