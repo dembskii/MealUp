@@ -1,5 +1,6 @@
 import asyncio
 from logging.config import fileConfig
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
