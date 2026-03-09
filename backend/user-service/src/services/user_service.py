@@ -1,8 +1,10 @@
 from sqlmodel import select, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.models.model import User, UserRole
+from sqlalchemy import func
+from src.models.model import User, UserRole, LikedWorkout, LikedRecipe
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -109,7 +111,7 @@ class UserService:
             user = result.first()
         except Exception as e:
             logger.error(f"Database error while fetching user: {str(e)}")
-            return None
+            raise
 
         if not user:
             return None
@@ -129,7 +131,7 @@ class UserService:
         except Exception as e:
             logger.error(f"Error updating user: {str(e)}")
             await session.rollback()
-            return None
+            raise
 
 
     @staticmethod
@@ -182,3 +184,293 @@ class UserService:
         except Exception as e:
             logger.error(f"Error searching users: {str(e)}")
             return []
+
+
+    # =================== Liked Workouts =================== #
+
+    @staticmethod
+    async def like_workout(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Like a workout. Returns False if already liked."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if existing:
+                logger.info(f"User {user_id} already liked workout {workout_id}")
+                return False
+
+            like = LikedWorkout(
+                user_id=user_id,
+                workout_id=workout_id,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(like)
+            await session.commit()
+
+            logger.info(f"User {user_id} liked workout {workout_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error liking workout: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def unlike_workout(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Unlike a workout. Returns False if not liked."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if not existing:
+                logger.info(f"User {user_id} has not liked workout {workout_id}")
+                return False
+
+            await session.delete(existing)
+            await session.commit()
+
+            logger.info(f"User {user_id} unliked workout {workout_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error unliking workout: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def is_workout_liked(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_id: str
+    ) -> bool:
+        """Check if a workout is liked by a user."""
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id,
+                LikedWorkout.workout_id == workout_id
+            )
+            result = await session.exec(statement)
+            return result.first() is not None
+
+        except Exception as e:
+            logger.error(f"Error checking liked workout: {str(e)}")
+            return False
+
+    @staticmethod
+    async def get_liked_workouts(
+        session: AsyncSession,
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[LikedWorkout]:
+        """Get all liked workouts for a user with pagination."""
+        try:
+            statement = (
+                select(LikedWorkout)
+                .where(LikedWorkout.user_id == user_id)
+                .order_by(LikedWorkout.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            return result.all()
+
+        except Exception as e:
+            logger.error(f"Error getting liked workouts: {str(e)}")
+            return []
+
+    @staticmethod
+    async def get_liked_workouts_count(
+        session: AsyncSession,
+        user_id: UUID
+    ) -> int:
+        """Get total count of liked workouts for a user."""
+        try:
+            statement = select(func.count(LikedWorkout.id)).where(
+                LikedWorkout.user_id == user_id
+            )
+            result = await session.exec(statement)
+            return result.first() or 0
+
+        except Exception as e:
+            logger.error(f"Error counting liked workouts: {str(e)}")
+            return 0
+
+    @staticmethod
+    async def search_liked_workouts(
+        session: AsyncSession,
+        user_id: UUID,
+        workout_ids: Optional[List[str]] = None,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[LikedWorkout]:
+        """Search/filter liked workouts for a user.
+
+        Args:
+            workout_ids: Optional list of workout IDs to filter by
+        """
+        try:
+            statement = select(LikedWorkout).where(
+                LikedWorkout.user_id == user_id
+            )
+
+            if workout_ids:
+                statement = statement.where(
+                    LikedWorkout.workout_id.in_(workout_ids)
+                )
+
+            statement = (
+                statement
+                .order_by(LikedWorkout.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+
+            result = await session.exec(statement)
+            return result.all()
+
+        except Exception as e:
+            logger.error(f"Error searching liked workouts: {str(e)}")
+            return []
+
+    # =================== Liked Recipes =================== #
+
+    @staticmethod
+    async def like_recipe(
+        session: AsyncSession,
+        user_id: UUID,
+        recipe_id: str
+    ) -> bool:
+        """Like a recipe. Returns False if already liked."""
+        try:
+            statement = select(LikedRecipe).where(
+                LikedRecipe.user_id == user_id,
+                LikedRecipe.recipe_id == recipe_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if existing:
+                logger.info(f"User {user_id} already liked recipe {recipe_id}")
+                return False
+
+            like = LikedRecipe(
+                user_id=user_id,
+                recipe_id=recipe_id,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(like)
+            await session.commit()
+
+            logger.info(f"User {user_id} liked recipe {recipe_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error liking recipe: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def unlike_recipe(
+        session: AsyncSession,
+        user_id: UUID,
+        recipe_id: str
+    ) -> bool:
+        """Unlike a recipe. Returns False if not liked."""
+        try:
+            statement = select(LikedRecipe).where(
+                LikedRecipe.user_id == user_id,
+                LikedRecipe.recipe_id == recipe_id
+            )
+            result = await session.exec(statement)
+            existing = result.first()
+
+            if not existing:
+                logger.info(f"User {user_id} has not liked recipe {recipe_id}")
+                return False
+
+            await session.delete(existing)
+            await session.commit()
+
+            logger.info(f"User {user_id} unliked recipe {recipe_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error unliking recipe: {str(e)}")
+            await session.rollback()
+            return False
+
+    @staticmethod
+    async def is_recipe_liked(
+        session: AsyncSession,
+        user_id: UUID,
+        recipe_id: str
+    ) -> bool:
+        """Check if a recipe is liked by a user."""
+        try:
+            statement = select(LikedRecipe).where(
+                LikedRecipe.user_id == user_id,
+                LikedRecipe.recipe_id == recipe_id
+            )
+            result = await session.exec(statement)
+            return result.first() is not None
+
+        except Exception as e:
+            logger.error(f"Error checking liked recipe: {str(e)}")
+            return False
+
+    @staticmethod
+    async def get_liked_recipes(
+        session: AsyncSession,
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 20
+    ) -> List[LikedRecipe]:
+        """Get all liked recipes for a user with pagination."""
+        try:
+            statement = (
+                select(LikedRecipe)
+                .where(LikedRecipe.user_id == user_id)
+                .order_by(LikedRecipe.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            return result.all()
+
+        except Exception as e:
+            logger.error(f"Error getting liked recipes: {str(e)}")
+            return []
+
+    @staticmethod
+    async def get_liked_recipes_count(
+        session: AsyncSession,
+        user_id: UUID
+    ) -> int:
+        """Get total count of liked recipes for a user."""
+        try:
+            statement = select(func.count(LikedRecipe.id)).where(
+                LikedRecipe.user_id == user_id
+            )
+            result = await session.exec(statement)
+            return result.first() or 0
+
+        except Exception as e:
+            logger.error(f"Error counting liked recipes: {str(e)}")
+            return 0

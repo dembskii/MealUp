@@ -5,6 +5,7 @@ from alembic import context
 
 from src.models.model import User
 from src.models.model import BodyParams
+from src.models.model import LikedWorkout
 from sqlmodel import SQLModel
 from src.core.config import settings
 import sqlmodel

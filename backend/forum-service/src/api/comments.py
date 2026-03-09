@@ -38,6 +38,18 @@ def get_required_user_id(
 
 
 
+@router.get("/posts/{post_id}/comments/count", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_comments_count(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Get total comment count for a post (including nested replies)"""
+    count = await CommentService.get_comments_count_by_post(session, post_id)
+    return {"post_id": str(post_id), "count": count}
+
+
+
 @router.post("/posts/{post_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
 async def create_comment(
     post_id: UUID,
@@ -383,3 +395,47 @@ async def get_comment_likes_count(
         )
     
     return {"comment_id": str(comment_id), "likes_count": count}
+
+
+
+@router.get("/comments/{comment_id}/like/status", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_comment_like_status(
+    comment_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check if the current user has liked a comment"""
+    try:
+        uuid_user_id = UUID(str(user_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
+        )
+    
+    liked = await LikeService.has_user_liked_comment(session, comment_id, uuid_user_id)
+    return {"comment_id": str(comment_id), "liked": liked}
+
+
+
+@router.post("/comments/likes/check", response_model=dict, status_code=status.HTTP_200_OK)
+async def check_comments_liked(
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check which comments from a list are liked by the current user"""
+    comment_ids_raw = body.get("comment_ids", [])
+    try:
+        uuid_user_id = UUID(str(user_id))
+        comment_ids = [UUID(str(cid)) for cid in comment_ids_raw]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format: {str(e)}"
+        )
+    
+    liked_ids = await LikeService.check_user_liked_comments(session, comment_ids, uuid_user_id)
+    return {"liked_comment_ids": liked_ids}

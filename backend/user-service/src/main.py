@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from src.core.config import settings
-from src.models.model import User
+from src.models.model import User, LikedWorkout
 from sqlmodel import SQLModel
 from src.api.routes import router
 import logging

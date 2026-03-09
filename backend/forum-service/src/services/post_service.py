@@ -4,11 +4,13 @@ from typing import Optional, List
 from uuid import UUID
 import logging
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func
+from sqlalchemy import func, delete, update
 
 from src.models.post import Post
 from src.models.post_view import PostView
+from src.models.post_like import PostLike
 from src.models.comment import Comment
+from src.models.comment_like import CommentLike
 from src.services.comment_service import CommentService
 
 
@@ -114,7 +116,7 @@ class PostService:
         session: AsyncSession,
         post_id: UUID
     ) -> bool:
-        """Delete a post by its ID"""
+        """Delete a post by its ID, including all related records"""
         try:
             statement = select(Post).where(Post.id == post_id)
             result = await session.exec(statement)
@@ -123,12 +125,47 @@ class PostService:
                 logger.warning(f"No post found with ID: {post_id} for deletion")
                 return False
 
+            # 1. Get all comment IDs for this post
+            comment_ids_stmt = select(Comment.id).where(Comment.post_id == post_id)
+            comment_ids_result = await session.exec(comment_ids_stmt)
+            comment_ids = list(comment_ids_result.all())
+
+            if comment_ids:
+                # 2. Delete CommentLikes for those comments (bulk)
+                await session.exec(
+                    delete(CommentLike).where(CommentLike.comment_id.in_(comment_ids))
+                )
+
+                # 3. Nullify self-referencing parent_comment_id to break FK cycle
+                await session.exec(
+                    update(Comment)
+                    .where(Comment.post_id == post_id)
+                    .values(parent_comment_id=None)
+                )
+
+                # 4. Delete all comments for this post (bulk)
+                await session.exec(
+                    delete(Comment).where(Comment.post_id == post_id)
+                )
+
+            # 5. Delete PostLikes (bulk)
+            await session.exec(
+                delete(PostLike).where(PostLike.post_id == post_id)
+            )
+
+            # 6. Delete PostViews (bulk)
+            await session.exec(
+                delete(PostView).where(PostView.post_id == post_id)
+            )
+
+            # 7. Delete the Post itself
             await session.delete(post)
             await session.commit()
-            logger.info(f"Deleted post with ID: {post_id}")
+            logger.info(f"Deleted post with ID: {post_id} and all related records")
             return True
         except Exception as e:
             logger.error(f"Error in delete_post: {str(e)}")
+            await session.rollback()
             return False
 
 

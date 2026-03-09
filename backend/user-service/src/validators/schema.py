@@ -86,3 +86,101 @@ class ErrorResponse(BaseModel):
     """Schema for error response"""
     detail: str = Field(description = "Details of an error.")
     status_code: int = Field(description = "Status code display for error purposes.")
+
+
+# =================== Liked Workout Schemas =================== #
+
+class LikeWorkoutRequest(BaseModel):
+    """Schema for liking/unliking a workout"""
+    workout_id: str = Field(
+        description="Workout ID from MongoDB workout-service",
+        examples=["550e8400-e29b-41d4-a716-446655440000"]
+    )
+
+
+class LikedWorkoutResponse(BaseModel):
+    """Schema for a single liked workout"""
+    id: UUID = Field(description="Liked workout record ID")
+    user_id: UUID = Field(description="User UID")
+    workout_id: str = Field(description="Workout ID from MongoDB")
+    created_at: datetime = Field(description="When the workout was liked")
+
+    class Config:
+        from_attributes = True
+
+
+class LikedWorkoutListResponse(BaseModel):
+    """Schema for list of liked workouts"""
+    total: int = Field(description="Total number of liked workouts")
+    items: List[LikedWorkoutResponse] = Field(description="Liked workout items")
+
+
+class WorkoutLikeStatusResponse(BaseModel):
+    """Schema for checking if a workout is liked"""
+    workout_id: str = Field(description="Workout ID")
+    is_liked: bool = Field(description="Whether the workout is liked by the user")
+
+
+class BulkLikeCheckRequest(BaseModel):
+    """Schema for checking like status of multiple workouts"""
+    workout_ids: List[str] = Field(
+        description="List of workout IDs to check",
+        min_length=1,
+        max_length=100
+    )
+
+
+class BulkLikeCheckResponse(BaseModel):
+    """Schema for bulk like status check"""
+    results: dict[str, bool] = Field(
+        description="Map of workout_id to is_liked status"
+    )
+
+
+# =================== Liked Recipe Schemas =================== #
+
+class LikeRecipeRequest(BaseModel):
+    """Schema for liking/unliking a recipe"""
+    recipe_id: str = Field(
+        description="Recipe ID from MongoDB recipe-service",
+        examples=["550e8400-e29b-41d4-a716-446655440000"]
+    )
+
+
+class LikedRecipeResponse(BaseModel):
+    """Schema for a single liked recipe"""
+    id: UUID = Field(description="Liked recipe record ID")
+    user_id: UUID = Field(description="User UID")
+    recipe_id: str = Field(description="Recipe ID from MongoDB")
+    created_at: datetime = Field(description="When the recipe was liked")
+
+    class Config:
+        from_attributes = True
+
+
+class LikedRecipeListResponse(BaseModel):
+    """Schema for list of liked recipes"""
+    total: int = Field(description="Total number of liked recipes")
+    items: List[LikedRecipeResponse] = Field(description="Liked recipe items")
+
+
+class RecipeLikeStatusResponse(BaseModel):
+    """Schema for checking if a recipe is liked"""
+    recipe_id: str = Field(description="Recipe ID")
+    is_liked: bool = Field(description="Whether the recipe is liked by the user")
+
+
+class BulkRecipeLikeCheckRequest(BaseModel):
+    """Schema for checking like status of multiple recipes"""
+    recipe_ids: List[str] = Field(
+        description="List of recipe IDs to check",
+        min_length=1,
+        max_length=100
+    )
+
+
+class BulkRecipeLikeCheckResponse(BaseModel):
+    """Schema for bulk recipe like status check"""
+    results: dict[str, bool] = Field(
+        description="Map of recipe_id to is_liked status"
+    )

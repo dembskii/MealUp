@@ -63,6 +63,18 @@ class Post(SQLModel, table=True):
         description="Tags associated with the post"
     )
 
+    linked_recipes: Optional[List[str]] = Field(
+        sa_column=Column(pg.ARRAY(pg.TEXT)),
+        default=None,
+        description="List of recipe IDs linked to this post"
+    )
+
+    linked_workouts: Optional[List[str]] = Field(
+        sa_column=Column(pg.ARRAY(pg.TEXT)),
+        default=None,
+        description="List of workout/exercise IDs linked to this post"
+    )
+
     trending_coefficient: float = Field(
         default=0.0,
         description="Coefficient to determine the trending status of the post"

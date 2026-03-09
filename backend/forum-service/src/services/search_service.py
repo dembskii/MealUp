@@ -196,6 +196,8 @@ class SearchService:
                     author_id=str(post.author_id),
                     tags=list(post.tags) if post.tags else [],
                     images=list(post.images) if post.images else [],
+                    linked_recipes=list(post.linked_recipes) if post.linked_recipes else [],
+                    linked_workouts=list(post.linked_workouts) if post.linked_workouts else [],
                     total_likes=post.total_likes or 0,
                     views_count=post.views_count or 0,
                     comments_count=comments_count,
@@ -372,7 +374,7 @@ class SearchService:
                     params["tags"] = tags
                 
                 response = await client.get(
-                    f"{settings.WORKOUT_SERVICE_URL}/exercises/search",
+                    f"{SearchService.WORKOUT_SERVICE_URL}/exercises",
                     params=params,
                     headers=headers
                 )
@@ -531,7 +533,9 @@ class SearchService:
                     views_count,
                     trending_coefficient,
                     created_at,
-                    updated_at
+                    updated_at,
+                    linked_recipes,
+                    linked_workouts
                 FROM posts
                 WHERE :tag = ANY(tags)
                 ORDER BY {sort_clause}
@@ -571,6 +575,8 @@ class SearchService:
                     trending_coefficient=float(row[8] or 0),
                     created_at=row[9],
                     updated_at=row[10],
+                    linked_recipes=list(row[11]) if row[11] else [],
+                    linked_workouts=list(row[12]) if row[12] else [],
                     relevance_score=1.0
                 ))
             

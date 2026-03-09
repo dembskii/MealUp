@@ -314,3 +314,47 @@ async def get_post_likes(
         "post_id": str(post_id),
         "likes_count": count
     }
+
+
+
+@router.get("/posts/{post_id}/like/status", response_model=dict, status_code=status.HTTP_200_OK)
+async def get_post_like_status(
+    post_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check if the current user has liked a post"""
+    try:
+        uuid_user_id = UUID(str(user_id))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid User ID format. Expected UUID, got: {user_id}"
+        )
+    
+    liked = await LikeService.has_user_liked_post(session, post_id, uuid_user_id)
+    return {"post_id": str(post_id), "liked": liked}
+
+
+
+@router.post("/posts/likes/check", response_model=dict, status_code=status.HTTP_200_OK)
+async def check_posts_liked(
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_required_user_id),
+    token_payload: Dict = Depends(require_auth)
+):
+    """Check which posts from a list are liked by the current user"""
+    post_ids_raw = body.get("post_ids", [])
+    try:
+        uuid_user_id = UUID(str(user_id))
+        post_ids = [UUID(str(pid)) for pid in post_ids_raw]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format: {str(e)}"
+        )
+    
+    liked_ids = await LikeService.check_user_liked_posts(session, post_ids, uuid_user_id)
+    return {"liked_post_ids": liked_ids}

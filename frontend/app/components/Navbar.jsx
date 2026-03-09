@@ -1,81 +1,10 @@
 'use client';
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
-
-  const checkAuth = async () => {
-    try {
-      const res = await fetch("http://localhost:8000/api/v1/auth/me", {
-        credentials: "include"
-      });
-      
-      console.log("Auth check response:", res.status);
-      
-      if (res.ok) {
-        const data = await res.json();
-        console.log("User authenticated:", data);
-        setUser(data);
-      } else {
-        console.log("Not authenticated, clearing user");
-        setUser(null);
-        document.cookie = "session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      }
-    } catch (error) {
-      console.error("Auth check failed:", error);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const handleLogin = () => {
-    window.location.href = "http://localhost:8000/api/v1/auth/login";
-  };
-
-  const handleSignUp = (role = "user") => {
-    window.location.href = `http://localhost:8000/api/v1/auth/login?prompt=signup&role=${role}`;
-  };
-
-  const handleLogout = async () => {
-    try {
-      console.log("Starting logout...");
-      
-      const res = await fetch("http://localhost:8000/api/v1/auth/logout", {
-        method: "GET",
-        credentials: "include"
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        console.log("Logout successful");
-        
-        setUser(null);
-        
-        if (data.logout_url) {
-            window.location.href = data.logout_url;
-        } else {
-            window.location.href = "/";
-        }
-      } else {
-        console.error("Logout failed:", res.status);
-        setUser(null);
-        window.location.href = "/";
-      }
-    } catch (error) {
-      console.error("Logout error:", error);
-      setUser(null);
-    }
-  };
+  const { user, isLoading, handleLogin, handleSignUp, handleLogout } = useAuth();
 
   return (
     <nav className="bg-white dark:bg-slate-900 shadow-sm">

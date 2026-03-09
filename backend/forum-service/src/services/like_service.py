@@ -2,7 +2,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from uuid import UUID
 import logging
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy import func
 
@@ -256,3 +256,87 @@ class LikeService:
         except Exception as e:
             logger.error(f"Error getting comment likes count: {str(e)}")
             return None
+
+
+
+    #================= Like Status Checks ==================#
+    @staticmethod
+    async def has_user_liked_post(
+        session: AsyncSession,
+        post_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """Check if a user has liked a specific post"""
+        try:
+            statement = select(PostLike).where(
+                PostLike.post_id == post_id,
+                PostLike.user_id == user_id
+            )
+            result = await session.exec(statement)
+            return result.first() is not None
+        except Exception as e:
+            logger.error(f"Error checking post like status: {str(e)}")
+            return False
+
+
+
+    @staticmethod
+    async def check_user_liked_posts(
+        session: AsyncSession,
+        post_ids: List[UUID],
+        user_id: UUID
+    ) -> List[str]:
+        """Check which posts from a list are liked by the user. Returns list of liked post IDs."""
+        try:
+            statement = select(PostLike.post_id).where(
+                PostLike.user_id == user_id,
+                PostLike.post_id.in_(post_ids)
+            )
+            result = await session.exec(statement)
+            liked = result.all()
+            return [str(pid) for pid in liked]
+        except Exception as e:
+            logger.error(f"Error checking liked posts: {str(e)}")
+            return []
+
+
+
+    @staticmethod
+    async def has_user_liked_comment(
+        session: AsyncSession,
+        comment_id: UUID,
+        user_id: UUID
+    ) -> bool:
+        """Check if a user has liked a specific comment"""
+        try:
+            statement = select(CommentLike).where(
+                CommentLike.comment_id == comment_id,
+                CommentLike.user_id == user_id
+            )
+            result = await session.exec(statement)
+            return result.first() is not None
+        except Exception as e:
+            logger.error(f"Error checking comment like status: {str(e)}")
+            return False
+
+
+
+
+    @staticmethod
+    async def check_user_liked_comments(
+        session: AsyncSession,
+        comment_ids: List[UUID],
+        user_id: UUID
+    ) -> List[str]:
+        """Check which comments from a list are liked by the user. Returns list of liked comment IDs."""
+        try:
+            statement = select(CommentLike.comment_id).where(
+                CommentLike.user_id == user_id,
+                CommentLike.comment_id.in_(comment_ids)
+            )
+            result = await session.exec(statement)
+            liked = result.all()
+            return [str(cid) for cid in liked]
+        except Exception as e:
+            logger.error(f"Error checking liked comments: {str(e)}")
+            return []

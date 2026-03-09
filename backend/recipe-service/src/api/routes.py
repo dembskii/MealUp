@@ -1,15 +1,14 @@
-import uuid
 import logging
 from typing import Optional
-from urllib.parse import urlencode
 from fastapi import APIRouter, HTTPException, Query, Header, Depends
-
+import asyncio
 from src.core.config import settings
 from src.models.model import (
     Recipe, RecipeCreate, RecipeUpdate, RecipeResponse,
     Ingredient, IngredientCreate, IngredientUpdate, IngredientResponse
 )
 from src.services.recipe_service import RecipeService, IngredientService
+from src.services.image_generation_service import generate_recipe_image
 from typing import Dict
 
 from common.auth_guard import require_auth 
@@ -129,6 +128,12 @@ async def create_recipe(
     
     try:
         recipe = await RecipeService.create_recipe(recipe_data, user_id)
+        
+        #Creating coroutine for image generation, we don't want to await it here to avoid blocking the response
+        asyncio.create_task(
+            generate_recipe_image(recipe.id, recipe.name)
+        )
+
         return recipe
     except Exception as e:
         logger.error(f"Error creating recipe: {str(e)}")

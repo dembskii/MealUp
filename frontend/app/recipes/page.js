@@ -1,12 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import RecipeList from "../components/Recipe/RecipeList";
 import RecipeCreator from "../components/Recipe/RecipeCreator";
+import LandingPage from "../components/LandingPage";
+import { Loader2 } from "lucide-react";
 
 export default function RecipesPage() {
+  const { isLoading, isAuthenticated } = useAuth();
   const [showCreator, setShowCreator] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-7 h-7 animate-spin text-brand-500" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LandingPage />;
+  }
 
   const handleAddRecipe = () => {
     setShowCreator(true);
