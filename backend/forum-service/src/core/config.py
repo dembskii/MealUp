@@ -31,10 +31,17 @@ class Settings(BaseSettings):
     AUTH_REDIS_PASSWORD: str
     REDIS_AUTH_URL: str
 
+    #Auth0
     AUTH0_DOMAIN: str
     AUTH0_AUDIENCE: Optional[str] = None
     ALGORITHMS: str
-    
+
+    #RAG
+    EMBEDDING_MODEL: str
+    RETRIVE_LLM: str
+    OPENROUTER_API_KEY: str
+    OPENROUTER_BASE_URL: str
+
     class Config:
         env_file = ".env.local" if Path(".env.local").exists() else ".env"
         case_sensitive = True
