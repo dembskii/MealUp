@@ -3,6 +3,7 @@ from sqlmodel import SQLModel, Field, Relationship, Column
 from datetime import datetime, timezone
 from typing import Optional, List
 import uuid
+from pgvector.sqlalchemy import Vector
 
 
 class Post(SQLModel, table=True):
@@ -78,6 +79,12 @@ class Post(SQLModel, table=True):
     trending_coefficient: float = Field(
         default=0.0,
         description="Coefficient to determine the trending status of the post"
+    )
+
+    embedding: Optional[List[float]] = Field(
+        sa_column=Column(Vector(1536), nullable=True),
+        default=None,
+        description="Vector embedding of the post for RAG"
     )
 
     created_at: datetime = Field(
