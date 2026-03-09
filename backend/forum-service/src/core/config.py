@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     #RAG
     EMBEDDING_MODEL: str
-    RETRIVE_LLM: str
+    RETRIEVE_LLM: str
     OPENROUTER_API_KEY: str
     OPENROUTER_BASE_URL: str
 
