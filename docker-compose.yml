@@ -138,6 +138,11 @@ services:
       - RECIPE_SERVICE_URL=${RECIPE_SERVICE_URL}
       - WORKOUT_SERVICE_URL=${WORKOUT_SERVICE_URL}
       - USER_SERVICE_URL=${USER_SERVICE_URL}
+
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      - RETRIEVE_LLM=${RETRIEVE_LLM}
     depends_on:
       shared-postgres-db:
         condition: service_healthy
