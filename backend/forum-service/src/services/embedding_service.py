@@ -6,7 +6,7 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-embedding_client = AsyncOpenAI(
+client = AsyncOpenAI(
     api_key=settings.OPENROUTER_API_KEY,
     base_url=settings.OPENROUTER_BASE_URL
 )
@@ -36,7 +36,7 @@ async def generate_embedding(text: str) -> Optional[List[float]]:
             logger.warning("Empty text passed to generate_embedding")
             return None
         
-        response = await embedding_client.embeddings.create(
+        response = await client.embeddings.create(
             model=settings.EMBEDDING_MODEL,
             input=text
         )
