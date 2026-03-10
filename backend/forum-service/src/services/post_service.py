@@ -12,6 +12,8 @@ from src.models.post_like import PostLike
 from src.models.comment import Comment
 from src.models.comment_like import CommentLike
 from src.services.comment_service import CommentService
+from src.services.embedding_service import embed_post
+
 
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,10 @@ class PostService:
             session.add(new_post)
             await session.commit()
             await session.refresh(new_post)
+
+            #Creating embedding for the post
+            await embed_post(session, new_post)
+
             logger.info(f"Created new post with ID: {new_post.id}")
             return new_post
         except Exception as e:
@@ -101,8 +107,12 @@ class PostService:
                     setattr(post, key, value)
 
             session.add(post)
+            #Creating embedding for the post
+            await embed_post(session, post)
+            
             await session.commit()
             await session.refresh(post)
+
             logger.info(f"Updated post with ID: {post_id}")
             return post
         except Exception as e:
