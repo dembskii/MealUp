@@ -8,6 +8,7 @@ import logging
 from src.api import posts as post_routes
 from src.api import comments as comment_routes
 from src.api import search as search_routes
+from src.api import ai as ai_routes
 
 logging.basicConfig(
     level = logging.INFO,
@@ -46,7 +47,7 @@ app.add_middleware(
 app.include_router(post_routes.router, prefix="/forum", tags=["posts"])
 app.include_router(comment_routes.router, prefix="/forum", tags=["comments"])
 app.include_router(search_routes.router, prefix="/forum", tags=["search"]) 
-
+app.include_router(ai_routes.router, prefix="/forum", tags=["ai"])
 
 @app.get("/")
 async def root():
