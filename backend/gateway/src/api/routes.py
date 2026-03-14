@@ -108,6 +108,22 @@ async def proxy_users_root(request: Request, headers: Dict = Depends(get_auth_he
     )
 
 
+@router.api_route("/user/users/search", methods=["GET"])
+async def proxy_users_search(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy user search requests"""
+    return await proxy.forward_request(
+        service_name="user",
+        path="/user/users/search",
+        method=request.method,
+        headers=headers,
+        body=None,
+        params=dict(request.query_params)
+    )
+
+
+
+
+
 # Recipe Service Proxy Routes
 @router.api_route("/recipes/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_recipes(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
@@ -133,6 +149,21 @@ async def proxy_recipes_root(request: Request, headers: Dict = Depends(get_auth_
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
         params=dict(request.query_params)
     )
+
+
+@router.api_route("/recipes/search", methods=["GET"])
+async def proxy_recipes_search(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy recipe search requests"""
+    return await proxy.forward_request(
+        service_name="recipe",
+        path="/recipes/search",
+        method=request.method,
+        headers=headers,
+        body=None,
+        params=dict(request.query_params)
+    )
+
+
 
 
 
@@ -161,6 +192,21 @@ async def proxy_workouts_root(request: Request, headers: Dict = Depends(get_auth
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
         params=dict(request.query_params)
     )
+
+
+@router.api_route("/workouts/exercises/search", methods=["GET"])
+async def proxy_workouts_search(request: Request, headers: Dict = Depends(get_auth_headers)):
+    """Proxy workout search requests"""
+    return await proxy.forward_request(
+        service_name="workout",
+        path="/workouts/exercises/search",
+        method=request.method,
+        headers=headers,
+        body=None,
+        params=dict(request.query_params)
+    )
+
+
 
 
 
