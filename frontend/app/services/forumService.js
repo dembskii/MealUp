@@ -174,3 +174,12 @@ export async function searchByTag(tag, { sort_by = 'newest', skip = 0, limit = 2
   const params = new URLSearchParams({ sort_by, skip, limit });
   return request(`${BASE}/search/by-tag/${encodeURIComponent(tag)}?${params}`);
 }
+
+// ======================== RAG / AI ========================
+
+export async function askRAG(question, top_k = 5) {
+  return request(`${BASE}/ai/ask`, {
+    method: 'POST',
+    body: JSON.stringify({ question, top_k }),
+  });
+}
