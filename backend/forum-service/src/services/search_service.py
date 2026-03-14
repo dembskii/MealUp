@@ -374,11 +374,7 @@ class SearchService:
                     params["tags"] = tags
                 
                 response = await client.get(
-<<<<<<< HEAD
-                    f"{SearchService.WORKOUT_SERVICE_URL}/exercises",
-=======
                     f"{settings.WORKOUT_SERVICE_URL}/exercises/search",
->>>>>>> 74cb974 (refactor(search by different categories): Added updated search methods for the rest of the categories.)
                     params=params,
                     headers=headers
                 )
