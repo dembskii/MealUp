@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def require_internal_access(x_internal_token: Optional[str] = Header(None, alias="X-Internal-Token")) -> None:
+    """Allow trusted service-to-service calls without end-user JWT."""
+    if x_internal_token != settings.INTERNAL_SERVICE_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid internal service token")
+
+
 def get_user_id_from_header(x_user_id: Optional[str] = Header(None)) -> str:
     """Extract user ID from header (set by gateway after auth)"""
     if not x_user_id:
@@ -53,6 +59,20 @@ async def get_ingredient(
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
     
+    return ingredient
+
+
+@router.get("/internal/ingredients/{ingredient_id}", response_model=IngredientResponse)
+async def get_ingredient_internal(
+    ingredient_id: str,
+    _: None = Depends(require_internal_access),
+):
+    """Internal endpoint for analytics-service ingredient lookups."""
+    ingredient = await IngredientService.get_ingredient(ingredient_id)
+
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
     return ingredient
 
 
@@ -151,6 +171,20 @@ async def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     
+    return recipe
+
+
+@router.get("/internal/recipes/{recipe_id}", response_model=RecipeResponse)
+async def get_recipe_internal(
+    recipe_id: str,
+    _: None = Depends(require_internal_access),
+):
+    """Internal endpoint for analytics-service recipe lookups."""
+    recipe = await RecipeService.get_recipe(recipe_id)
+
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
     return recipe
 
 

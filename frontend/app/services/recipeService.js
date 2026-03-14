@@ -28,4 +28,9 @@ export async function getRecipeById(recipeId) {
   return request(`${BASE}/${recipeId}`);
 }
 
-export default { getRecipes, getRecipeById };
+export async function getIngredients({ skip = 0, limit = 500 } = {}) {
+  const params = new URLSearchParams({ skip, limit });
+  return request(`${BASE}/ingredients?${params}`);
+}
+
+export default { getRecipes, getRecipeById, getIngredients };

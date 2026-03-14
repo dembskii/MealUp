@@ -2,13 +2,19 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
-  Plus, Sparkles, Utensils, Dumbbell,
+  Plus, Sparkles, Utensils,
   Search, X, Camera, Clock, ChevronLeft, Save, Trash2, ChevronDown,
   CalendarDays, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { getUserById } from '../services/userService';
+import { getRecipes, getIngredients } from '../services/recipeService';
+import {
+  getDailyLog,
+  getDailyLogsRange,
+  createMealEntry,
+  deleteMealEntry,
+} from '../services/analyticsService';
 
 // ---- Date helpers ----
 const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -49,14 +55,99 @@ function getCalendarGrid(year, month) {
   return days;
 }
 
-const INITIAL_FOOD_DATABASE = [
-  { id: 1, name: 'Grilled Chicken Breast', kcal: 165, p: 31, c: 0, f: 3.6, image: 'https://picsum.photos/200?random=1' },
-  { id: 2, name: 'Avocado Toast', kcal: 250, p: 6, c: 18, f: 16, image: 'https://picsum.photos/200?random=2' },
-  { id: 3, name: 'Greek Yogurt Bowl', kcal: 120, p: 15, c: 8, f: 0, image: 'https://picsum.photos/200?random=3' },
-  { id: 4, name: 'Salmon Fillet', kcal: 208, p: 20, c: 0, f: 13, image: 'https://picsum.photos/200?random=4' },
-  { id: 5, name: 'Oatmeal with Berries', kcal: 150, p: 5, c: 27, f: 2.5, image: 'https://picsum.photos/200?random=5' },
-  { id: 6, name: 'Protein Shake', kcal: 110, p: 24, c: 2, f: 1, image: 'https://picsum.photos/200?random=6' },
-];
+function formatDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function emptyMealsState() {
+  return { breakfast: [], lunch: [], dinner: [], snack: [] };
+}
+
+function convertToGrams(quantity, unit) {
+  const q = Number(quantity) || 0;
+  switch (unit) {
+    case 'kg': return q * 1000;
+    case 'ml': return q;
+    case 'l': return q * 1000;
+    case 'tsp': return q * 5;
+    case 'tbsp': return q * 15;
+    case 'cup': return q * 240;
+    // Keep conversion identical to the Nutrition tab implementation.
+    case 'oz': return q * 28.35;
+    case 'lb': return q * 453.6;
+    case 'pcs': return q * 100;
+    case 'g':
+    default:
+      return q;
+  }
+}
+
+function computeRecipeBaseGrams(ingredients) {
+  return (ingredients || []).reduce(
+    (sum, ing) => sum + convertToGrams(ing.quantity, ing.capacity),
+    0,
+  );
+}
+
+function computeRecipeMacrosPer100(recipe, ingredientMap) {
+  let calories = 0;
+  let protein = 0;
+  let carbs = 0;
+  let fat = 0;
+  let totalWeight = 0;
+
+  for (const item of recipe.ingredients || []) {
+    const ing = ingredientMap[item.ingredient_id];
+    const weightG = convertToGrams(item.quantity || 0, item.capacity);
+    totalWeight += weightG;
+
+    if (ing?.macro_per_hundred) {
+      const factor = weightG / 100;
+      calories += (ing.macro_per_hundred.calories || 0) * factor;
+      protein += (ing.macro_per_hundred.proteins || 0) * factor;
+      carbs += (ing.macro_per_hundred.carbs || 0) * factor;
+      fat += (ing.macro_per_hundred.fats || 0) * factor;
+    }
+  }
+
+  if (totalWeight <= 0) {
+    return { kcal: 0, p: 0, c: 0, f: 0 };
+  }
+
+  const norm = 100 / totalWeight;
+  return {
+    kcal: Math.round(calories * norm),
+    p: Math.round(protein * norm),
+    c: Math.round(carbs * norm),
+    f: Math.round(fat * norm),
+  };
+}
+
+function mapDailyLogToMeals(log) {
+  const meals = emptyMealsState();
+
+  for (const entry of log?.meals || []) {
+    const section = entry.meal_type;
+    if (!meals[section]) continue;
+    meals[section].push({
+      entryId: entry._id || entry.id,
+      id: entry.recipe_id || entry._id || entry.id,
+      recipeId: entry.recipe_id,
+      name: entry.recipe_name || (entry.ingredients || []).map((i) => i.name).join(', ') || 'Meal entry',
+      kcal: Math.round(entry.total_macros?.calories || 0),
+      p: Math.round(entry.total_macros?.proteins || 0),
+      c: Math.round(entry.total_macros?.carbs || 0),
+      f: Math.round(entry.total_macros?.fats || 0),
+      grams: Math.round((entry.ingredients || []).reduce((sum, ing) => sum + (Number(ing.quantity) || 0), 0)),
+    });
+  }
+
+  meals._totalMacro = log?.total_macros || null;
+  return meals;
+}
 
 export default function Dashboard() {
   const { user: authUser } = useAuth();
@@ -83,46 +174,103 @@ export default function Dashboard() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState('search');
   const [searchQuery, setSearchQuery] = useState('');
+  const [portionGrams, setPortionGrams] = useState('100');
   const [activeSection, setActiveSection] = useState(null);
-  const [foodDatabase, setFoodDatabase] = useState(INITIAL_FOOD_DATABASE);
+  const [foodDatabase, setFoodDatabase] = useState([]);
 
   const [allMeals, setAllMeals] = useState({});
+  const [recordedDateKeys, setRecordedDateKeys] = useState(new Set());
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
 
-  const dateKey = selectedDate.toISOString().split('T')[0];
-  const dailyMeals = allMeals[dateKey] || { breakfast: [], lunch: [], dinner: [], snack: [], workout: [] };
+  const dateKey = useMemo(() => formatDateKey(selectedDate), [selectedDate]);
+  const dailyMeals = allMeals[dateKey] || { ...emptyMealsState(), _totalMacro: null };
 
-  // Load user meal records
+  const refreshDateData = useCallback(async (dateToLoad) => {
+    try {
+      const dailyLog = await getDailyLog(dateToLoad);
+      const mapped = mapDailyLogToMeals(dailyLog);
+      const hasMeals = ['breakfast', 'lunch', 'dinner', 'snack'].some((section) => (mapped[section] || []).length > 0);
+
+      setAllMeals(prev => ({ ...prev, [dateToLoad]: mapped }));
+      setRecordedDateKeys(prev => {
+        const next = new Set(prev);
+        if (hasMeals) next.add(dateToLoad);
+        else next.delete(dateToLoad);
+        return next;
+      });
+    } catch (err) {
+      console.error(`Failed to load daily log for ${dateToLoad}:`, err);
+      setAllMeals(prev => ({ ...prev, [dateToLoad]: { ...emptyMealsState(), _totalMacro: null } }));
+    }
+  }, []);
+
+  const refreshMonthSummary = useCallback(async (year, month) => {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0);
+    const from = formatDateKey(monthStart);
+    const to = formatDateKey(monthEnd);
+
+    try {
+      const logs = await getDailyLogsRange(from, to);
+      setRecordedDateKeys(new Set((logs || []).map((log) => log.date)));
+    } catch (err) {
+      console.error('Failed to load date markers:', err);
+      setRecordedDateKeys(new Set());
+    }
+  }, []);
+
+  // Load recipes for search list
   useEffect(() => {
     if (!authUser?.internal_uid) return;
     (async () => {
       try {
-        const profile = await getUserById(authUser.internal_uid);
-        if (profile?.meal_records && Array.isArray(profile.meal_records)) {
-          const mealsMap = {};
-          for (const dayRec of profile.meal_records) {
-            const dk = dayRec.created_at ? dayRec.created_at.split('T')[0] : null;
-            if (!dk) continue;
-            const meals = { breakfast: [], lunch: [], dinner: [], snack: [], workout: [] };
-            if (dayRec.records && Array.isArray(dayRec.records)) {
-              for (const rec of dayRec.records) {
-                const section = rec.time_of_day || 'snack';
-                if (!meals[section]) meals[section] = [];
-                meals[section].push({
-                  id: rec.recipe_id, name: rec.recipe_id,
-                  kcal: 0, p: 0, c: 0, f: 0, capacity: rec.capacity || 1,
-                });
-              }
-            }
-            if (dayRec.total_macro) meals._totalMacro = dayRec.total_macro;
-            mealsMap[dk] = meals;
-          }
-          setAllMeals(mealsMap);
+        const limit = 100;
+        let skip = 0;
+        const recipes = [];
+
+        const ingredients = await getIngredients({ skip: 0, limit: 500 });
+        const map = {};
+        (ingredients || []).forEach((ing) => {
+          const key = ing.id || ing._id;
+          if (key) map[key] = ing;
+        });
+
+        // Recipe API enforces limit <= 100, so fetch in pages.
+        while (true) {
+          const page = await getRecipes({ skip, limit });
+          if (!page?.length) break;
+          recipes.push(...page);
+          if (page.length < limit) break;
+          skip += limit;
         }
+
+        const mappedRecipes = (recipes || []).map((recipe) => ({
+          ...computeRecipeMacrosPer100(recipe, map),
+          id: recipe._id || recipe.id,
+          recipeId: recipe._id || recipe.id,
+          name: recipe.name,
+          ingredients: recipe.ingredients || [],
+          baseTotalGrams: computeRecipeBaseGrams(recipe.ingredients || []),
+          image: recipe.image || `https://picsum.photos/seed/${recipe._id || recipe.id}/200/200`,
+        }));
+        setFoodDatabase(mappedRecipes);
       } catch (err) {
-        console.error('Failed to load meal records:', err);
+        console.error('Failed to load recipes for dashboard:', err);
       }
     })();
   }, [authUser?.internal_uid]);
+
+  // Load selected date meals from analytics
+  useEffect(() => {
+    if (!authUser?.internal_uid) return;
+    refreshDateData(dateKey);
+  }, [authUser?.internal_uid, dateKey, refreshDateData]);
+
+  // Load calendar markers for visible month
+  useEffect(() => {
+    if (!authUser?.internal_uid) return;
+    refreshMonthSummary(calYear, calMonth);
+  }, [authUser?.internal_uid, calYear, calMonth, refreshMonthSummary]);
 
   const [newRecipe, setNewRecipe] = useState({
     name: '', time: '', ingredientName: '', ingredientAmount: '100',
@@ -134,13 +282,13 @@ export default function Dashboard() {
       const tm = dailyMeals._totalMacro;
       return {
         calories: { current: Math.round(tm.calories || 0), target: 2200, unit: 'kcal', color: 'bg-orange-500' },
-        protein: { current: Math.round(tm.protein || 0), target: 140, unit: 'g', color: 'bg-green-500' },
-        fat: { current: Math.round(tm.fat || 0), target: 70, unit: 'g', color: 'bg-purple-500' },
+        protein: { current: Math.round(tm.proteins || 0), target: 140, unit: 'g', color: 'bg-green-500' },
+        fat: { current: Math.round(tm.fats || 0), target: 70, unit: 'g', color: 'bg-purple-500' },
         carbs: { current: Math.round(tm.carbs || 0), target: 280, unit: 'g', color: 'bg-blue-500' },
       };
     }
     let total = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-    ['breakfast', 'lunch', 'dinner', 'snack', 'workout'].forEach((s) => {
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach((s) => {
       (dailyMeals[s] || []).forEach((item) => {
         total.calories += item.kcal || 0;
         total.protein += item.p || 0;
@@ -161,7 +309,6 @@ export default function Dashboard() {
     { id: 'lunch', label: 'Lunch', recommended: '600-800 kcal', icon: Utensils },
     { id: 'dinner', label: 'Dinner', recommended: '500-700 kcal', icon: Utensils },
     { id: 'snack', label: 'Snacks', recommended: '100-300 kcal', icon: Utensils },
-    { id: 'workout', label: 'Training', recommended: 'Burn 400 kcal', icon: Dumbbell },
   ];
 
   const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.05 } } };
@@ -169,22 +316,76 @@ export default function Dashboard() {
 
   const openAddModal = (sectionId) => { setActiveSection(sectionId); setViewMode('search'); setIsAddModalOpen(true); };
 
-  const handleAddFoodToMeal = (food) => {
-    if (!activeSection) return;
-    setAllMeals(prev => {
-      const current = prev[dateKey] || { breakfast: [], lunch: [], dinner: [], snack: [], workout: [] };
-      return { ...prev, [dateKey]: { ...current, [activeSection]: [...(current[activeSection] || []), food] } };
-    });
-    setIsAddModalOpen(false);
+  const buildIngredientsForPortion = (food, targetGrams) => {
+    const recipeIngredients = food.ingredients || [];
+    if (!recipeIngredients.length) return [];
+
+    const baseTotalGrams = food.baseTotalGrams || computeRecipeBaseGrams(recipeIngredients);
+    if (!baseTotalGrams || baseTotalGrams <= 0) return [];
+
+    const scale = targetGrams / baseTotalGrams;
+    return recipeIngredients
+      .map((ing) => {
+        const grams = convertToGrams(ing.quantity, ing.capacity) * scale;
+        return {
+          ingredient_id: ing.ingredient_id,
+          quantity: Math.round(grams * 100) / 100,
+        };
+      })
+      .filter((ing) => ing.ingredient_id && ing.quantity > 0);
   };
 
-  const handleRemoveFood = (sectionId, index) => {
-    setAllMeals(prev => {
-      const current = prev[dateKey] || { breakfast: [], lunch: [], dinner: [], snack: [], workout: [] };
-      const items = [...(current[sectionId] || [])];
-      items.splice(index, 1);
-      return { ...prev, [dateKey]: { ...current, [sectionId]: items } };
-    });
+  const handleAddFoodToMeal = async (food) => {
+    if (!activeSection || isSavingMeal) return;
+
+    const recipeId = food.recipeId || food.id;
+    if (!recipeId) return;
+
+    const parsedPortion = Number(portionGrams);
+    const targetGrams = Number.isFinite(parsedPortion) && parsedPortion > 0 ? parsedPortion : 100;
+    const ingredients = buildIngredientsForPortion(food, targetGrams);
+
+    try {
+      setIsSavingMeal(true);
+      const payload = {
+        date: dateKey,
+        meal_type: activeSection,
+        recipe_name: food.name,
+      };
+
+      // Prefer manual ingredient quantities in grams so macros match chosen portion.
+      if (ingredients.length) {
+        payload.ingredients = ingredients;
+      } else {
+        payload.recipe_id = String(recipeId);
+      }
+
+      await createMealEntry(payload);
+      await refreshDateData(dateKey);
+      await refreshMonthSummary(calYear, calMonth);
+      setIsAddModalOpen(false);
+      setPortionGrams('100');
+    } catch (err) {
+      console.error('Failed to add meal entry:', err);
+    } finally {
+      setIsSavingMeal(false);
+    }
+  };
+
+  const handleRemoveFood = async (sectionId, index) => {
+    const item = (dailyMeals[sectionId] || [])[index];
+    if (!item?.entryId || isSavingMeal) return;
+
+    try {
+      setIsSavingMeal(true);
+      await deleteMealEntry(item.entryId);
+      await refreshDateData(dateKey);
+      await refreshMonthSummary(calYear, calMonth);
+    } catch (err) {
+      console.error('Failed to delete meal entry:', err);
+    } finally {
+      setIsSavingMeal(false);
+    }
   };
 
   const handleAddIngredient = () => {
@@ -221,7 +422,16 @@ export default function Dashboard() {
   const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); };
   const selectCalDay = (d) => { setSelectedDate(d); setCalendarOpen(false); };
   const calDays = useMemo(() => getCalendarGrid(calYear, calMonth), [calYear, calMonth]);
-  const recordedDates = useMemo(() => new Set(Object.keys(allMeals)), [allMeals]);
+  const recordedDates = useMemo(() => {
+    const merged = new Set(recordedDateKeys);
+
+    Object.entries(allMeals).forEach(([key, meals]) => {
+      const hasMeals = ['breakfast', 'lunch', 'dinner', 'snack'].some((section) => (meals?.[section] || []).length > 0);
+      if (hasMeals) merged.add(key);
+    });
+
+    return merged;
+  }, [allMeals, recordedDateKeys]);
 
   return (
     <motion.div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto" variants={containerVariants} initial="hidden" animate="visible">
@@ -249,7 +459,7 @@ export default function Dashboard() {
           {weekDays.map((d, i) => {
             const isToday = isSameDay(d, today);
             const isSelected = isSameDay(d, selectedDate);
-            const hasData = recordedDates.has(d.toISOString().split('T')[0]);
+            const hasData = recordedDates.has(formatDateKey(d));
             return (
               <button key={i} onClick={() => setSelectedDate(d)}
                 className={`flex flex-col items-center justify-center w-10 h-14 rounded-2xl transition-all duration-300 relative ${
@@ -287,7 +497,7 @@ export default function Dashboard() {
                   if (!d) return <div key={`b-${i}`} />;
                   const sel = isSameDay(d, selectedDate);
                   const isT = isSameDay(d, today);
-                  const hasData = recordedDates.has(d.toISOString().split('T')[0]);
+                  const hasData = recordedDates.has(formatDateKey(d));
                   const isFuture = d > today;
                   return (
                     <button key={i} onClick={() => selectCalDay(d)} disabled={isFuture}
@@ -325,7 +535,7 @@ export default function Dashboard() {
                     <button className="flex items-center justify-center w-10 h-10 rounded-full bg-brand-50/50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors border border-brand-200/30" title="AI Suggestions">
                       <Sparkles className="w-5 h-5" />
                     </button>
-                    <button onClick={() => openAddModal(section.id)} className="liquid-btn liquid-btn-secondary w-10 h-10 rounded-full flex items-center justify-center" title="Add Item">
+                    <button onClick={() => openAddModal(section.id)} disabled={isSavingMeal} className="liquid-btn liquid-btn-secondary w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-60" title="Add Item">
                       <Plus className="w-5 h-5" />
                     </button>
                   </div>
@@ -338,8 +548,8 @@ export default function Dashboard() {
                           className="flex justify-between items-center py-3 px-4 bg-slate-50/90 dark:bg-slate-800/40 rounded-2xl border border-slate-200/50 dark:border-white/5 backdrop-blur-sm group">
                           <span className="font-medium text-slate-700 dark:text-slate-200 text-sm">{item.name}</span>
                           <div className="flex items-center gap-4">
-                            <span className="font-bold text-slate-500 dark:text-slate-400 text-sm">{item.kcal} kcal</span>
-                            <button onClick={() => handleRemoveFood(section.id, i)}
+                            <span className="font-bold text-slate-500 dark:text-slate-400 text-sm">{item.kcal} kcal{item.grams ? ` • ${item.grams} g` : ''}</span>
+                            <button onClick={() => handleRemoveFood(section.id, i)} disabled={isSavingMeal}
                               className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 transition-opacity"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </motion.div>
@@ -399,10 +609,16 @@ export default function Dashboard() {
                         <input type="text" placeholder="Search for food..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                           className="w-full pl-10 pr-4 py-3.5 liquid-input rounded-2xl text-slate-800 dark:text-white placeholder-slate-400 outline-none" />
                       </div>
-                      <button onClick={() => setViewMode('create')}
-                        className="liquid-btn liquid-btn-primary px-5 py-3 rounded-2xl font-semibold text-sm flex items-center gap-2 whitespace-nowrap">
-                        <Plus className="w-4 h-4" /> Create Custom
-                      </button>
+                      <div className="w-28">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1 ml-1">Portion (g)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={portionGrams}
+                          onChange={(e) => setPortionGrams(e.target.value)}
+                          className="w-full px-3 py-3.5 liquid-input rounded-2xl text-slate-800 dark:text-white outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-6 pt-0 space-y-3">

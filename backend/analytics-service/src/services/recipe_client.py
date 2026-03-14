@@ -43,6 +43,10 @@ def _get_client() -> httpx.AsyncClient:
     return _client
 
 
+def _internal_headers() -> Dict[str, str]:
+    return {"X-Internal-Token": settings.INTERNAL_SERVICE_TOKEN}
+
+
 async def close_client() -> None:
     """Gracefully close the HTTP client (call on app shutdown)."""
     global _client
@@ -61,11 +65,17 @@ async def fetch_recipe(recipe_id: str) -> Optional[Dict[str, Any]]:
     """
     client = _get_client()
     try:
-        resp = await client.get(f"/recipes/{recipe_id}")
+        resp = await client.get(
+            f"/recipes/internal/recipes/{recipe_id}",
+            headers=_internal_headers(),
+        )
         if resp.status_code == 200:
             return resp.json()
         logger.warning(
-            "recipe-service returned %s for recipe %s", resp.status_code, recipe_id
+            "recipe-service returned %s for recipe %s: %s",
+            resp.status_code,
+            recipe_id,
+            resp.text,
         )
     except httpx.HTTPError as exc:
         logger.error("Failed to fetch recipe %s: %s", recipe_id, exc)
@@ -79,13 +89,17 @@ async def fetch_ingredient(ingredient_id: str) -> Optional[Dict[str, Any]]:
     """
     client = _get_client()
     try:
-        resp = await client.get(f"/recipes/ingredients/{ingredient_id}")
+        resp = await client.get(
+            f"/recipes/internal/ingredients/{ingredient_id}",
+            headers=_internal_headers(),
+        )
         if resp.status_code == 200:
             return resp.json()
         logger.warning(
-            "recipe-service returned %s for ingredient %s",
+            "recipe-service returned %s for ingredient %s: %s",
             resp.status_code,
             ingredient_id,
+            resp.text,
         )
     except httpx.HTTPError as exc:
         logger.error("Failed to fetch ingredient %s: %s", ingredient_id, exc)
