@@ -374,7 +374,7 @@ class SearchService:
                     params["tags"] = tags
                 
                 response = await client.get(
-                    f"{SearchService.WORKOUT_SERVICE_URL}/exercises",
+                    f"{settings.WORKOUT_SERVICE_URL}/exercises/search",
                     params=params,
                     headers=headers
                 )

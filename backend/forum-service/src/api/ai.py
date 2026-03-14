@@ -17,7 +17,6 @@ router = APIRouter()
 @router.post("/ai/ask", response_model=AskResponse, status_code=status.HTTP_200_OK)
 async def rag_query(
     request: AskRequest,
-    top_k: int,
     session: AsyncSession = Depends(get_session),
     token_payload: Dict = Depends(require_auth)
 ):
@@ -32,7 +31,7 @@ async def rag_query(
            
         logger.info(f"User {token_payload.get('sub')} asked: {request.question}")
 
-        result = await ask(session, request.question, top_k)
+        result = await ask(session, request.question, request.top_k)
 
         if not result.get("sources"):
             logger.warning(f"No sources found for question: {request.question}")
