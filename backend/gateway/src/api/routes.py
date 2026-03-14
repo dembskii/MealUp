@@ -49,7 +49,6 @@ async def get_services():
         "auth_service": settings.AUTH_SERVICE_URL,
         "user_service": settings.USER_SERVICE_URL,
         "recipe_service": settings.RECIPE_SERVICE_URL,
-        "user_service": settings.USER_SERVICE_URL,
         "forum_service": settings.FORUM_SERVICE_URL,
     }
 
