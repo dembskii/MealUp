@@ -215,13 +215,16 @@ async def proxy_workouts_search(request: Request, headers: Dict = Depends(get_au
 @router.api_route("/forum/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_forum(path: str, request: Request, headers: Dict = Depends(get_auth_headers)):
     """Proxy all requests to forum service"""
+    # AI/RAG routes need a longer timeout for LLM inference
+    timeout = 120.0 if path.startswith("ai/") else None
     return await proxy.forward_request(
         service_name="forum",
         path=f"/forum/{path}",
         method=request.method,
         headers=headers,
         body=await request.body() if request.method in ["POST", "PUT", "PATCH", "DELETE"] else None,
-        params=dict(request.query_params)
+        params=dict(request.query_params),
+        timeout=timeout
     )
 
 

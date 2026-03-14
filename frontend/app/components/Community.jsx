@@ -6,7 +6,7 @@ import {
   Search, Flame, Clock, X,
   Eye, TrendingUp, Send, Plus, Hash, Loader2,
   Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink,
-  ArrowRight, CheckCircle2
+  ArrowRight, CheckCircle2, Sparkles, Bot, Minus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,8 @@ import { getRecipes, getRecipeById } from '../services/recipeService';
 import { getTrainings, getTraining } from '../services/workoutService';
 import { getExercise } from '../services/workoutService';
 import { ENDPOINTS } from '../config/network';
+import { TextShimmer } from './ui/TextShimmer';
+import ReactMarkdown from 'react-markdown';
 
 // ======================== UTILITIES ========================
 
@@ -1277,6 +1279,15 @@ export default function Community() {
   const [detailPopup, setDetailPopup] = useState(null); // { type: 'recipe'|'workout', data: object } | null
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // RAG AI Assistant state
+  const [ragOpen, setRagOpen] = useState(false);
+  const [ragQuery, setRagQuery] = useState('');
+  const [ragMessages, setRagMessages] = useState([]);
+  const [ragLoading, setRagLoading] = useState(false);
+  const ragInputRef = useRef(null);
+  const ragPanelRef = useRef(null);
+  const ragScrollRef = useRef(null);
+
   const { user: authUser } = useAuth();
 
   // Set current user from auth context
@@ -1590,6 +1601,57 @@ export default function Community() {
     }
   }, []);
 
+  // Click outside to close RAG panel
+  useEffect(() => {
+    if (!ragOpen) return;
+    function handleClickOutside(e) {
+      if (ragPanelRef.current && !ragPanelRef.current.contains(e.target)) {
+        setRagOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [ragOpen]);
+
+  // Auto-scroll RAG messages
+  useEffect(() => {
+    if (ragScrollRef.current) {
+      ragScrollRef.current.scrollTop = ragScrollRef.current.scrollHeight;
+    }
+  }, [ragMessages, ragLoading]);
+
+  // Clear RAG chat
+  const handleRagClear = useCallback(() => {
+    setRagMessages([]);
+    setRagQuery('');
+  }, []);
+
+  // RAG AI Assistant handler
+  const handleRagSubmit = useCallback(async (e) => {
+    e?.preventDefault();
+    const question = ragQuery.trim();
+    if (!question || ragLoading) return;
+
+    setRagMessages((prev) => [...prev, { role: 'user', content: question }]);
+    setRagQuery('');
+    setRagLoading(true);
+
+    try {
+      const result = await forumAPI.askRAG(question);
+      setRagMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: result.answer, sources: result.sources || [] },
+      ]);
+    } catch (err) {
+      setRagMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.', error: true },
+      ]);
+    } finally {
+      setRagLoading(false);
+    }
+  }, [ragQuery, ragLoading]);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -1897,6 +1959,230 @@ export default function Community() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* AI Assistant – Floating Widget (bottom-right) */}
+      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
+        <motion.div
+          ref={ragPanelRef}
+          className="glass-panel overflow-hidden relative flex flex-col shadow-2xl shadow-black/10"
+          initial={false}
+          animate={{
+            width: ragOpen ? 380 : 180,
+            height: ragOpen ? 480 : 46,
+            borderRadius: ragOpen ? 20 : 23,
+          }}
+          transition={{
+            type: 'spring',
+            stiffness: 500,
+            damping: 42,
+            mass: 0.8,
+            delay: ragOpen ? 0 : 0.06,
+          }}
+          style={{ originX: 1, originY: 1 }}
+        >
+          {/* Collapsed pill */}
+          <AnimatePresence>
+            {!ragOpen && (
+              <motion.button
+                key="dock"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                onClick={() => { setRagOpen(true); setTimeout(() => ragInputRef.current?.focus(), 350); }}
+                className="flex items-center gap-2.5 px-1.5 h-[46px] w-full justify-center select-none cursor-pointer"
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 8, ease: 'linear' }}
+                  className="w-5 h-5 rounded-full shrink-0"
+                  style={{
+                    background: 'conic-gradient(from 0deg, #1bd384, #44eba2, #0fab68, #81f8c2, #1bd384)',
+                    filter: 'blur(0.5px)',
+                  }}
+                />
+                <span className="font-bold text-sm text-slate-700 dark:text-slate-200 whitespace-nowrap">Ask AI</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* Expanded panel */}
+          <AnimatePresence>
+            {ragOpen && (
+              <motion.div
+                key="panel"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 42, mass: 0.7 }}
+                className="flex flex-col h-full absolute inset-0"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/60 dark:border-white/10 shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 8, ease: 'linear' }}
+                      className="w-6 h-6 rounded-full shrink-0"
+                      style={{
+                        background: 'conic-gradient(from 0deg, #1bd384, #44eba2, #0fab68, #81f8c2, #1bd384)',
+                        filter: 'blur(0.5px)',
+                      }}
+                    />
+                    <div>
+                      <span className="font-bold text-sm text-slate-800 dark:text-white">AI Assistant</span>
+                      <p className="text-[10px] text-slate-400">Powered by community knowledge</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {ragMessages.length > 0 && (
+                      <button
+                        onClick={handleRagClear}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Clear chat"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setRagOpen(false)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                      title="Minimize"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                <div ref={ragScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {ragMessages.length === 0 && !ragLoading && (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <Bot className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
+                      <p className="text-sm font-medium text-slate-400 dark:text-slate-500">Ask me anything about community posts</p>
+                      <p className="text-xs text-slate-300 dark:text-slate-600 mt-1">I&apos;ll search through forum posts to find answers for you</p>
+                    </div>
+                  )}
+
+                  {ragMessages.map((msg, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                        msg.role === 'user'
+                          ? 'bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-lg shadow-brand-500/20'
+                          : msg.error
+                          ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                          : 'bg-white/60 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 text-slate-700 dark:text-slate-200'
+                      }`}>
+                        {msg.role === 'assistant' && !msg.error && (
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Sparkles className="w-3.5 h-3.5 text-brand-500" />
+                            <span className="text-xs font-bold text-brand-600 dark:text-brand-400">AI</span>
+                          </div>
+                        )}
+                        <div className="text-sm leading-relaxed rag-markdown">
+                          <ReactMarkdown
+                            components={{
+                              h1: ({ children }) => <h3 className="text-base font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
+                              h2: ({ children }) => <h3 className="text-[13px] font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
+                              h3: ({ children }) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-800 dark:text-white">{children}</h4>,
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              strong: ({ children }) => <strong className="font-bold text-slate-800 dark:text-white">{children}</strong>,
+                              em: ({ children }) => <em className="italic">{children}</em>,
+                              ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+                              li: ({ children }) => <li className="text-sm">{children}</li>,
+                              table: ({ children }) => (
+                                <div className="overflow-x-auto my-2 rounded-lg border border-slate-200/60 dark:border-white/10">
+                                  <table className="w-full text-xs">{children}</table>
+                                </div>
+                              ),
+                              thead: ({ children }) => <thead className="bg-slate-100/80 dark:bg-white/5">{children}</thead>,
+                              th: ({ children }) => <th className="px-2.5 py-1.5 text-left font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200/60 dark:border-white/10">{children}</th>,
+                              td: ({ children }) => <td className="px-2.5 py-1.5 border-b border-slate-100/60 dark:border-white/5">{children}</td>,
+                              code: ({ children }) => <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/10 rounded text-xs font-mono">{children}</code>,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-brand-400 pl-3 my-2 text-slate-500 dark:text-slate-400 italic">{children}</blockquote>,
+                              hr: () => <hr className="my-2 border-slate-200/60 dark:border-white/10" />,
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                        {msg.sources?.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-white/10">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Sources</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {msg.sources.map((src, si) => (
+                                <button
+                                  key={si}
+                                  onClick={() => {
+                                    const post = posts.find((p) => p.id === src.id);
+                                    if (post) setCommentPost(post);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-[11px] font-medium hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors border border-brand-200/50 dark:border-brand-500/20"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  {src.title?.length > 35 ? src.title.slice(0, 35) + '…' : src.title}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+
+                  {ragLoading && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex justify-start"
+                    >
+                      <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white/60 dark:bg-white/5 border border-slate-200/60 dark:border-white/10">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Sparkles className="w-3.5 h-3.5 text-brand-500" />
+                          <span className="text-xs font-bold text-brand-600 dark:text-brand-400">AI</span>
+                        </div>
+                        <TextShimmer
+                          duration={1.2}
+                          className="font-mono text-sm [--base-color:theme(--color-brand-600)] [--base-gradient-color:theme(--color-brand-200)] dark:[--base-color:theme(--color-brand-700)] dark:[--base-gradient-color:theme(--color-brand-400)]"
+                        >
+                          Searching community posts...
+                        </TextShimmer>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Input */}
+                <form onSubmit={handleRagSubmit} className="p-3 border-t border-slate-200/60 dark:border-white/10 flex gap-2 shrink-0">
+                  <input
+                    ref={ragInputRef}
+                    type="text"
+                    value={ragQuery}
+                    onChange={(e) => setRagQuery(e.target.value)}
+                    placeholder="e.g. Best high-protein meals?"
+                    disabled={ragLoading}
+                    className="flex-1 px-4 py-2.5 bg-slate-100/60 dark:bg-white/5 rounded-xl text-sm text-slate-800 dark:text-white placeholder-slate-400 outline-none border border-transparent focus:border-brand-400 dark:focus:border-brand-500 transition-colors disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={ragLoading || !ragQuery.trim()}
+                    className="liquid-btn liquid-btn-primary p-2.5 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </div>
     </motion.div>
   );
 }

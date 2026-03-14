@@ -31,9 +31,9 @@ async def vector_search(session: AsyncSession, query: str, top_k: int = 5) -> Li
     return list(result.all())
 
 
-async def ask(session: AsyncSession, question: str) -> dict:
+async def ask(session: AsyncSession, question: str, top_k: int = 5) -> dict:
     """RAG pipeline: retrieve relevant posts → build prompt → call LLM → return answer + sources."""
-    sources = await vector_search(session, question)
+    sources = await vector_search(session, question, top_k)
 
     if not sources:
         return {
@@ -59,7 +59,7 @@ async def ask(session: AsyncSession, question: str) -> dict:
         messages=[{"role": "user", "content": prompt}]
     )
 
-    answer = response.choices[0].message.content
+    answer = response.choices[0].message.content or "I could not generate a response based on the available forum posts."
 
     return {
         "answer": answer,

@@ -31,6 +31,7 @@ class ServiceProxy:
         headers: Optional[Dict] = None,
         body: Optional[bytes] = None,
         params: Optional[Dict] = None,
+        timeout: Optional[float] = None,
     ) -> Response:
         
         if service_name not in self.services:
@@ -46,8 +47,10 @@ class ServiceProxy:
         
         logger.info(f"Proxying {method} request to {service_name}: {url}")
         
+        request_timeout = httpx.Timeout(timeout=timeout, connect=settings.CONNECT_TIMEOUT) if timeout else self.timeout
+        
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=request_timeout) as client:
                 response = await client.request(
                     method=method,
                     url=url,
