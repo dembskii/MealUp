@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     AUTH0_AUDIENCE: Optional[str] = None
     ALGORITHMS: str
 
+    # Internal service-to-service auth
+    INTERNAL_SERVICE_TOKEN: str = "mealup-internal-dev-token"
+
     #AI section
     OPEN_ROUTER_API_KEY: str
     OPENROUTER_URL: str

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # Inter-service communication
     RECIPE_SERVICE_URL: str
+    INTERNAL_SERVICE_TOKEN: str = "mealup-internal-dev-token"
 
     # Auth0
     AUTH0_DOMAIN: str
