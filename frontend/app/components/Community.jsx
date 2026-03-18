@@ -6,7 +6,7 @@ import {
   Search, Flame, Clock, X,
   Eye, TrendingUp, Send, Plus, Hash, Loader2,
   Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink,
-  ArrowRight, CheckCircle2, Sparkles, Bot, Minus
+  ArrowRight, CheckCircle2, Sparkles, Bot, Minus, Maximize2, Minimize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -389,8 +389,16 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange, auth
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    // Be defensive about post._id vs post.id, though mapPost should ensure post.id
+    const postId = post.id || post._id;
+    if (!postId) {
+      console.warn("No post ID found to load comments");
+      setLoading(false);
+      return;
+    }
+
     forumAPI
-      .getCommentsTree(post.id)
+      .getCommentsTree(postId)
       .then(async (data) => {
         if (cancelled) return;
         setComments(data);
@@ -524,7 +532,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange, auth
   const totalComments = countTreeComments(comments);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onClose}>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md modal-overlay" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1281,6 +1289,7 @@ export default function Community() {
 
   // RAG AI Assistant state
   const [ragOpen, setRagOpen] = useState(false);
+  const [ragExpanded, setRagExpanded] = useState(false);
   const [ragQuery, setRagQuery] = useState('');
   const [ragMessages, setRagMessages] = useState([]);
   const [ragLoading, setRagLoading] = useState(false);
@@ -1605,6 +1614,10 @@ export default function Community() {
   useEffect(() => {
     if (!ragOpen) return;
     function handleClickOutside(e) {
+      // Don't close if a modal is open or if clicking inside a modal overlay
+      if (document.querySelector('.modal-overlay')?.contains(e.target) || e.target.closest('.modal-overlay')) {
+        return;
+      }
       if (ragPanelRef.current && !ragPanelRef.current.contains(e.target)) {
         setRagOpen(false);
       }
@@ -1651,6 +1664,28 @@ export default function Community() {
       setRagLoading(false);
     }
   }, [ragQuery, ragLoading]);
+
+  const handleSourceClick = async (srcId) => {
+    try {
+      setDetailLoading(true);
+      let post = posts.find((p) => String(p.id) === String(srcId));
+      if (!post) {
+        const rawPost = await forumAPI.getPostById(srcId);
+        if (rawPost) post = mapPost(rawPost);
+      }
+      if (post) {
+        setCommentPost(post);
+        // Optionally collapse rag if on mobile so they can see the modal clearly
+        if (window.innerWidth < 640) {
+          setRagOpen(false);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load source post", error);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 max-w-4xl mx-auto">
@@ -1949,7 +1984,7 @@ export default function Community() {
       {/* Detail loading overlay */}
       <AnimatePresence>
         {detailLoading && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center">
+          <div className="fixed inset-0 z-[120] flex items-center justify-center">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
               className="relative z-10 p-6 bg-white/90 dark:bg-slate-800/90 rounded-2xl shadow-xl flex items-center gap-3">
@@ -1961,15 +1996,21 @@ export default function Community() {
       </AnimatePresence>
 
       {/* AI Assistant – Floating Widget (bottom-right) */}
-      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
+      <div className="fixed bottom-5 right-5 z-[100] flex flex-col items-end">
         <motion.div
           ref={ragPanelRef}
-          className="glass-panel overflow-hidden relative flex flex-col shadow-2xl shadow-black/10"
+          className="bg-white dark:bg-slate-900 backdrop-blur-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden relative flex flex-col shadow-2xl shadow-slate-200/40 dark:shadow-black/50"
           initial={false}
           animate={{
-            width: ragOpen ? 380 : 180,
-            height: ragOpen ? 480 : 46,
+            width: ragOpen ? (ragExpanded ? 900 : 420) : 180,
+            height: ragOpen ? (ragExpanded ? 800 : 600) : 46,
             borderRadius: ragOpen ? 20 : 23,
+          }}
+          style={{ 
+            originX: 1, 
+            originY: 1,
+            maxWidth: 'calc(100vw - 40px)',
+            maxHeight: ragExpanded ? 'calc(100vh - 40px)' : 'calc(100vh - 120px)'
           }}
           transition={{
             type: 'spring',
@@ -1978,7 +2019,6 @@ export default function Community() {
             mass: 0.8,
             delay: ragOpen ? 0 : 0.06,
           }}
-          style={{ originX: 1, originY: 1 }}
         >
           {/* Collapsed pill */}
           <AnimatePresence>
@@ -2045,6 +2085,13 @@ export default function Community() {
                       </button>
                     )}
                     <button
+                      onClick={() => setRagExpanded(!ragExpanded)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-brand-500 transition-colors"
+                      title={ragExpanded ? "Shrink" : "Expand"}
+                    >
+                      {ragExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                    <button
                       onClick={() => setRagOpen(false)}
                       className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
                       title="Minimize"
@@ -2088,46 +2135,44 @@ export default function Community() {
                         <div className="text-sm leading-relaxed rag-markdown">
                           <ReactMarkdown
                             components={{
-                              h1: ({ children }) => <h3 className="text-base font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
-                              h2: ({ children }) => <h3 className="text-[13px] font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
-                              h3: ({ children }) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-800 dark:text-white">{children}</h4>,
-                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                              strong: ({ children }) => <strong className="font-bold text-slate-800 dark:text-white">{children}</strong>,
+                              h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-slate-800 dark:text-white">{children}</h1>,
+                              h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2 text-slate-800 dark:text-white">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-sm font-bold mt-2 mb-1 text-slate-800 dark:text-white">{children}</h3>,
+                              p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed text-[14px]">{children}</p>,
+                              strong: ({ children }) => <strong className="font-bold text-slate-900 dark:text-white">{children}</strong>,
                               em: ({ children }) => <em className="italic">{children}</em>,
-                              ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
-                              ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
-                              li: ({ children }) => <li className="text-sm">{children}</li>,
+                              ul: ({ children }) => <ul className="list-disc list-outside ml-5 mb-3 space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-outside ml-5 mb-3 space-y-1">{children}</ol>,
+                              li: ({ children }) => <li className="pl-1 marker:text-brand-500">{children}</li>,
                               table: ({ children }) => (
-                                <div className="overflow-x-auto my-2 rounded-lg border border-slate-200/60 dark:border-white/10">
-                                  <table className="w-full text-xs">{children}</table>
+                                <div className="overflow-x-auto my-3 rounded-lg border border-slate-200/60 dark:border-white/10">
+                                  <table className="w-full text-sm">{children}</table>
                                 </div>
                               ),
                               thead: ({ children }) => <thead className="bg-slate-100/80 dark:bg-white/5">{children}</thead>,
-                              th: ({ children }) => <th className="px-2.5 py-1.5 text-left font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200/60 dark:border-white/10">{children}</th>,
-                              td: ({ children }) => <td className="px-2.5 py-1.5 border-b border-slate-100/60 dark:border-white/5">{children}</td>,
-                              code: ({ children }) => <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/10 rounded text-xs font-mono">{children}</code>,
-                              blockquote: ({ children }) => <blockquote className="border-l-2 border-brand-400 pl-3 my-2 text-slate-500 dark:text-slate-400 italic">{children}</blockquote>,
-                              hr: () => <hr className="my-2 border-slate-200/60 dark:border-white/10" />,
+                              th: ({ children }) => <th className="px-3 py-2 text-left font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200/60 dark:border-white/10">{children}</th>,
+                              td: ({ children }) => <td className="px-3 py-2 border-b border-slate-100/60 dark:border-white/5 last:border-0">{children}</td>,
+                              code: ({ children }) => <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/10 rounded-md text-[13px] font-mono whitespace-pre-wrap word-break">{children}</code>,
+                              pre: ({ children }) => <pre className="p-3 bg-slate-100 dark:bg-white/5 rounded-lg overflow-x-auto text-[13px] mb-3">{children}</pre>,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-brand-400 pl-3 my-3 text-slate-500 dark:text-slate-400 italic">{children}</blockquote>,
+                              hr: () => <hr className="my-4 border-slate-200/60 dark:border-white/10" />,
                             }}
                           >
                             {msg.content}
                           </ReactMarkdown>
                         </div>
                         {msg.sources?.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-white/10">
+                          <div className="mt-4 pt-3 border-t border-slate-200/40 dark:border-white/10">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Sources</p>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-2">
                               {msg.sources.map((src, si) => (
                                 <button
                                   key={si}
-                                  onClick={() => {
-                                    const post = posts.find((p) => p.id === src.id);
-                                    if (post) setCommentPost(post);
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-[11px] font-medium hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors border border-brand-200/50 dark:border-brand-500/20"
+                                  onClick={() => handleSourceClick(src.id)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-brand-50 w-full sm:w-auto text-left dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-[12px] font-medium hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors border border-brand-200/50 dark:border-brand-500/20 shadow-sm"
                                 >
-                                  <ExternalLink className="w-3 h-3" />
-                                  {src.title?.length > 35 ? src.title.slice(0, 35) + '…' : src.title}
+                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{src.title}</span>
                                 </button>
                               ))}
                             </div>
