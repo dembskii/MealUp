@@ -1,24 +1,34 @@
-# Development Dockerfile for Next.js with hot reload
-FROM node:20-alpine
+FROM node:20-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies only when needed
-COPY package*.json ./
-
-RUN npm install
-
-# Don't copy source files - they will be mounted as volume for hot reload
-# COPY . .
-
-# Next.js collects anonymous telemetry - disable it
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Enable hot reload in Docker
-ENV WATCHPACK_POLLING=true
-ENV CHOKIDAR_USEPOLLING=true
+FROM base AS deps
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM base AS builder
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npm run build
+
+FROM base AS runner
+
+ENV APP_ENV=production
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+COPY --from=builder /app/.next ./.next
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/.next && chown -R node:node /app
+
+USER node
 
 EXPOSE 3000
 
-# Run dev server with turbopack
-CMD ["npm", "run", "dev"]
+ENTRYPOINT ["docker-entrypoint.sh"]
