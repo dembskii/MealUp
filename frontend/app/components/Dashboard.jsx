@@ -16,6 +16,14 @@ import {
   deleteMealEntry,
 } from '../services/analyticsService';
 
+const CACHE_TTL_MS = 60 * 1000;
+let cachedFoodDatabase = null;
+let cachedFoodDatabasePromise = null;
+const inFlightDailyLogRequests = new Map();
+const dailyLogCache = new Map();
+const inFlightMonthSummaryRequests = new Map();
+const monthSummaryCache = new Map();
+
 // ---- Date helpers ----
 const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_NAMES = [
@@ -149,6 +157,105 @@ function mapDailyLogToMeals(log) {
   return meals;
 }
 
+function isFresh(entry) {
+  return !!entry && Date.now() - entry.ts < CACHE_TTL_MS;
+}
+
+async function fetchDailyLogDedup(dateToLoad, force = false) {
+  const cached = dailyLogCache.get(dateToLoad);
+  if (!force && isFresh(cached)) {
+    return cached.data;
+  }
+
+  if (!force && inFlightDailyLogRequests.has(dateToLoad)) {
+    return inFlightDailyLogRequests.get(dateToLoad);
+  }
+
+  const request = (async () => {
+    const dailyLog = await getDailyLog(dateToLoad);
+    dailyLogCache.set(dateToLoad, { data: dailyLog, ts: Date.now() });
+    return dailyLog;
+  })().finally(() => {
+    inFlightDailyLogRequests.delete(dateToLoad);
+  });
+
+  inFlightDailyLogRequests.set(dateToLoad, request);
+  return request;
+}
+
+async function fetchMonthSummaryDedup(from, to, force = false) {
+  const key = `${from}:${to}`;
+  const cached = monthSummaryCache.get(key);
+
+  if (!force && isFresh(cached)) {
+    return cached.data;
+  }
+
+  if (!force && inFlightMonthSummaryRequests.has(key)) {
+    return inFlightMonthSummaryRequests.get(key);
+  }
+
+  const request = (async () => {
+    const logs = await getDailyLogsRange(from, to);
+    monthSummaryCache.set(key, { data: logs || [], ts: Date.now() });
+    return logs || [];
+  })().finally(() => {
+    inFlightMonthSummaryRequests.delete(key);
+  });
+
+  inFlightMonthSummaryRequests.set(key, request);
+  return request;
+}
+
+async function fetchFoodDatabaseDedup() {
+  if (cachedFoodDatabase) {
+    return cachedFoodDatabase;
+  }
+
+  if (cachedFoodDatabasePromise) {
+    return cachedFoodDatabasePromise;
+  }
+
+  cachedFoodDatabasePromise = (async () => {
+    const limit = 100;
+    let skip = 0;
+    const recipes = [];
+
+    const ingredients = await getIngredients({ skip: 0, limit: 500 });
+    const map = {};
+    (ingredients || []).forEach((ing) => {
+      const key = ing.id || ing._id;
+      if (key) map[key] = ing;
+    });
+
+    // Recipe API enforces limit <= 100, so fetch in pages.
+    while (true) {
+      const page = await getRecipes({ skip, limit });
+      if (!page?.length) break;
+      recipes.push(...page);
+      if (page.length < limit) break;
+      skip += limit;
+    }
+
+    const mappedRecipes = (recipes || []).map((recipe) => ({
+      ...computeRecipeMacrosPer100(recipe, map),
+      id: recipe._id || recipe.id,
+      recipeId: recipe._id || recipe.id,
+      name: recipe.name,
+      ingredients: recipe.ingredients || [],
+      baseTotalGrams: computeRecipeBaseGrams(recipe.ingredients || []),
+      image: recipe.image || `https://picsum.photos/seed/${recipe._id || recipe.id}/200/200`,
+    }));
+
+    cachedFoodDatabase = mappedRecipes;
+    return mappedRecipes;
+  })().finally(() => {
+    cachedFoodDatabasePromise = null;
+  });
+
+  return cachedFoodDatabasePromise;
+}
+
 export default function Dashboard() {
   const { user: authUser } = useAuth();
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
@@ -185,9 +292,9 @@ export default function Dashboard() {
   const dateKey = useMemo(() => formatDateKey(selectedDate), [selectedDate]);
   const dailyMeals = allMeals[dateKey] || { ...emptyMealsState(), _totalMacro: null };
 
-  const refreshDateData = useCallback(async (dateToLoad) => {
+  const refreshDateData = useCallback(async (dateToLoad, force = false) => {
     try {
-      const dailyLog = await getDailyLog(dateToLoad);
+      const dailyLog = await fetchDailyLogDedup(dateToLoad, force);
       const mapped = mapDailyLogToMeals(dailyLog);
       const hasMeals = ['breakfast', 'lunch', 'dinner', 'snack'].some((section) => (mapped[section] || []).length > 0);
 
@@ -204,14 +311,14 @@ export default function Dashboard() {
     }
   }, []);
 
-  const refreshMonthSummary = useCallback(async (year, month) => {
+  const refreshMonthSummary = useCallback(async (year, month, force = false) => {
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
     const from = formatDateKey(monthStart);
     const to = formatDateKey(monthEnd);
 
     try {
-      const logs = await getDailyLogsRange(from, to);
+      const logs = await fetchMonthSummaryDedup(from, to, force);
       setRecordedDateKeys(new Set((logs || []).map((log) => log.date)));
     } catch (err) {
       console.error('Failed to load date markers:', err);
@@ -222,55 +329,59 @@ export default function Dashboard() {
   // Load recipes for search list
   useEffect(() => {
     if (!authUser?.internal_uid) return;
+    let cancelled = false;
+
     (async () => {
       try {
-        const limit = 100;
-        let skip = 0;
-        const recipes = [];
-
-        const ingredients = await getIngredients({ skip: 0, limit: 500 });
-        const map = {};
-        (ingredients || []).forEach((ing) => {
-          const key = ing.id || ing._id;
-          if (key) map[key] = ing;
-        });
-
-        // Recipe API enforces limit <= 100, so fetch in pages.
-        while (true) {
-          const page = await getRecipes({ skip, limit });
-          if (!page?.length) break;
-          recipes.push(...page);
-          if (page.length < limit) break;
-          skip += limit;
+        const mappedRecipes = await fetchFoodDatabaseDedup();
+        if (!cancelled) {
+          setFoodDatabase(mappedRecipes);
         }
-
-        const mappedRecipes = (recipes || []).map((recipe) => ({
-          ...computeRecipeMacrosPer100(recipe, map),
-          id: recipe._id || recipe.id,
-          recipeId: recipe._id || recipe.id,
-          name: recipe.name,
-          ingredients: recipe.ingredients || [],
-          baseTotalGrams: computeRecipeBaseGrams(recipe.ingredients || []),
-          image: recipe.image || `https://picsum.photos/seed/${recipe._id || recipe.id}/200/200`,
-        }));
-        setFoodDatabase(mappedRecipes);
       } catch (err) {
         console.error('Failed to load recipes for dashboard:', err);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authUser?.internal_uid]);
 
   // Load selected date meals from analytics
   useEffect(() => {
     if (!authUser?.internal_uid) return;
-    refreshDateData(dateKey);
+    let cancelled = false;
+
+    (async () => {
+      if (cancelled) return;
+      await refreshDateData(dateKey);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authUser?.internal_uid, dateKey, refreshDateData]);
 
   // Load calendar markers for visible month
   useEffect(() => {
     if (!authUser?.internal_uid) return;
-    refreshMonthSummary(calYear, calMonth);
+    let cancelled = false;
+
+    (async () => {
+      if (cancelled) return;
+      await refreshMonthSummary(calYear, calMonth);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authUser?.internal_uid, calYear, calMonth, refreshMonthSummary]);
+
+  const filteredFoodDatabase = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return foodDatabase;
+    return foodDatabase.filter((item) => item.name.toLowerCase().includes(query));
+  }, [foodDatabase, searchQuery]);
 
   const [newRecipe, setNewRecipe] = useState({
     name: '', time: '', ingredientName: '', ingredientAmount: '100',
@@ -361,8 +472,8 @@ export default function Dashboard() {
       }
 
       await createMealEntry(payload);
-      await refreshDateData(dateKey);
-      await refreshMonthSummary(calYear, calMonth);
+      await refreshDateData(dateKey, true);
+      await refreshMonthSummary(calYear, calMonth, true);
       setIsAddModalOpen(false);
       setPortionGrams('100');
     } catch (err) {
@@ -379,8 +490,8 @@ export default function Dashboard() {
     try {
       setIsSavingMeal(true);
       await deleteMealEntry(item.entryId);
-      await refreshDateData(dateKey);
-      await refreshMonthSummary(calYear, calMonth);
+      await refreshDateData(dateKey, true);
+      await refreshMonthSummary(calYear, calMonth, true);
     } catch (err) {
       console.error('Failed to delete meal entry:', err);
     } finally {
@@ -622,7 +733,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-6 pt-0 space-y-3">
-                    {foodDatabase.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase())).map((item) => (
+                    {filteredFoodDatabase.map((item) => (
                       <div key={item.id} onClick={() => handleAddFoodToMeal(item)}
                         className="group flex items-center gap-4 p-3 rounded-3xl border border-transparent hover:border-brand-200/50 hover:bg-white/50 dark:hover:bg-white/5 transition-all cursor-pointer">
                         <img src={item.image} alt={item.name} className="w-16 h-16 rounded-2xl object-cover shadow-md group-hover:scale-105 transition-transform" />
