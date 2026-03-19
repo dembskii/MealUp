@@ -9,6 +9,7 @@ import {
   ArrowRight, CheckCircle2, Sparkles, Bot, Minus, Maximize2, Minimize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../context/AuthContext';
 import * as forumAPI from '../services/forumService';
 import { batchGetDisplayNames } from '../services/userService';
@@ -86,62 +87,6 @@ function countTreeComments(tree) {
 }
 
 // ======================== HOOKS ========================
-
-function useInfiniteScroll(callback, hasMore, loading) {
-  const sentinelRef = useRef(null);
-
-  useEffect(() => {
-    if (!hasMore || loading) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) callback();
-      },
-      { rootMargin: '400px' }
-    );
-    const el = sentinelRef.current;
-    if (el) observer.observe(el);
-    return () => { if (el) observer.unobserve(el); };
-  }, [callback, hasMore, loading]);
-
-  return sentinelRef;
-}
-
-// Simple virtualization hook
-function useVirtualList(items, estimatedHeight = 320, overscan = 3) {
-  const containerRef = useRef(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const onScroll = () => {
-      const scrollTop = window.scrollY - (container.offsetTop || 0);
-      const viewportHeight = window.innerHeight;
-
-      const startIdx = Math.max(0, Math.floor(scrollTop / estimatedHeight) - overscan);
-      const endIdx = Math.min(
-        items.length,
-        Math.ceil((scrollTop + viewportHeight) / estimatedHeight) + overscan
-      );
-      setVisibleRange({ start: startIdx, end: endIdx });
-    };
-
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
-  }, [items.length, estimatedHeight, overscan]);
-
-  const totalHeight = items.length * estimatedHeight;
-  const offsetY = visibleRange.start * estimatedHeight;
-  const visibleItems = items.slice(visibleRange.start, visibleRange.end);
-
-  return { containerRef, totalHeight, offsetY, visibleItems, visibleRange };
-}
 
 // ======================== DELETE CONFIRMATION POPUP ========================
 
@@ -703,7 +648,7 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
   };
 
   return (
-    <div ref={cardRef} className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl mb-6">
+    <div ref={cardRef} className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl">
       {/* Header */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center gap-3">
@@ -1279,9 +1224,12 @@ export default function Community() {
   const [likedPostIds, setLikedPostIds] = useState(new Set());
   const skipRef = useRef(0);
   const fetchIdRef = useRef(0);
+  const requestedSkipsRef = useRef(new Set());
   const viewedPostIdsRef = useRef(new Set());
+  const feedContainerRef = useRef(null);
   const [authorNames, setAuthorNames] = useState({});
   const [linkedItemNames, setLinkedItemNames] = useState({ recipes: {}, workouts: {} });
+  const [feedScrollMargin, setFeedScrollMargin] = useState(0);
 
   // Detail popup state for linked items
   const [detailPopup, setDetailPopup] = useState(null); // { type: 'recipe'|'workout', data: object } | null
@@ -1298,6 +1246,15 @@ export default function Community() {
   const ragScrollRef = useRef(null);
 
   const { user: authUser } = useAuth();
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: posts.length,
+    estimateSize: () => 320,
+    overscan: 6,
+    scrollMargin: feedScrollMargin,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   // Set current user from auth context
   useEffect(() => {
@@ -1319,6 +1276,21 @@ export default function Community() {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    const updateFeedOffset = () => {
+      if (!feedContainerRef.current) return;
+      const rect = feedContainerRef.current.getBoundingClientRect();
+      setFeedScrollMargin(rect.top + window.scrollY);
+    };
+
+    updateFeedOffset();
+    window.addEventListener('resize', updateFeedOffset, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', updateFeedOffset);
+    };
+  }, [initialLoading, error, sortMode, debouncedSearch, filterType, posts.length]);
 
   // Check like status for a batch of posts
   const checkLikeStatus = useCallback(
@@ -1412,6 +1384,19 @@ export default function Community() {
     }
   }, []);
 
+  const applyFeedTypeFilter = useCallback(
+    (items) => {
+      if (filterType === 'Recipes') {
+        return items.filter((post) => (post.linked_recipes || []).length > 0);
+      }
+      if (filterType === 'Workouts') {
+        return items.filter((post) => (post.linked_workouts || []).length > 0);
+      }
+      return items;
+    },
+    [filterType]
+  );
+
   // Fetch posts
   const fetchPosts = useCallback(
     async (reset = false) => {
@@ -1422,13 +1407,20 @@ export default function Community() {
       const currentFetchId = ++fetchIdRef.current;
       const skip = reset ? 0 : skipRef.current;
 
+      if (reset) {
+        requestedSkipsRef.current.clear();
+      } else if (requestedSkipsRef.current.has(skip)) {
+        return;
+      }
+
+      requestedSkipsRef.current.add(skip);
+
       try {
         let data;
 
         if (debouncedSearch.trim()) {
-          const category = filterType === 'Recipes' ? 'recipes' : filterType === 'Workouts' ? 'workouts' : 'posts';
           const result = await forumAPI.searchForum(debouncedSearch, {
-            category,
+            category: 'posts',
             sort_by: sortMode === 'trending' ? 'trending' : 'newest',
             skip,
             limit: PAGE_SIZE,
@@ -1447,22 +1439,21 @@ export default function Community() {
             _created_at: p.created_at,
             _updated_at: p.updated_at,
           }));
-          setHasMore(result.has_more ?? data.length === PAGE_SIZE);
         } else if (sortMode === 'trending') {
           data = await forumAPI.getTrendingPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         } else {
           data = await forumAPI.getPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         }
 
         if (currentFetchId !== fetchIdRef.current) return;
 
-        const mapped = data.map(mapPost);
+        const mapped = applyFeedTypeFilter(data.map(mapPost));
+        const hasMoreByPageSize = data.length === PAGE_SIZE;
+        setHasMore(hasMoreByPageSize);
 
         if (reset) {
           setPosts(mapped);
-          skipRef.current = mapped.length;
+          skipRef.current = data.length;
           if (currentUserId && mapped.length > 0) {
             setLikedPostIds(new Set());
             checkLikeStatus(mapped.map((p) => p.id));
@@ -1474,9 +1465,14 @@ export default function Community() {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
             const newPosts = mapped.filter((p) => !existingIds.has(p.id));
+
+            if (filterType === 'All' && newPosts.length === 0 && mapped.length > 0) {
+              setHasMore(false);
+            }
+
             return [...prev, ...newPosts];
           });
-          skipRef.current = skip + mapped.length;
+          skipRef.current = skip + data.length;
           const newIds = mapped.map((p) => p.id);
           if (currentUserId && newIds.length > 0) {
             checkLikeStatus(newIds);
@@ -1488,6 +1484,7 @@ export default function Community() {
       } catch (e) {
         if (currentFetchId !== fetchIdRef.current) return;
         console.error('Failed to fetch posts:', e);
+        requestedSkipsRef.current.delete(skip);
         setError(e.message);
         setHasMore(false);
       } finally {
@@ -1497,12 +1494,24 @@ export default function Community() {
         }
       }
     },
-    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames, fetchLinkedItemNames]
+    [
+      sortMode,
+      debouncedSearch,
+      filterType,
+      currentUserId,
+      checkLikeStatus,
+      fetchCommentCounts,
+      fetchAuthorNames,
+      fetchLinkedItemNames,
+      applyFeedTypeFilter,
+      loading,
+    ]
   );
 
   // Reset & fetch on sort/search/filter change
   useEffect(() => {
     skipRef.current = 0;
+    requestedSkipsRef.current.clear();
     setPosts([]);
     setHasMore(true);
     setInitialLoading(true);
@@ -1521,8 +1530,15 @@ export default function Community() {
     if (!loading && hasMore) fetchPosts(false);
   }, [fetchPosts, loading, hasMore]);
 
-  const sentinelRef = useInfiniteScroll(loadMore, hasMore, loading);
-  const { containerRef, totalHeight, offsetY, visibleItems } = useVirtualList(posts, 280, 5);
+  useEffect(() => {
+    if (loading || initialLoading || !hasMore || posts.length === 0) return;
+    const lastVisibleItem = virtualItems[virtualItems.length - 1];
+    if (!lastVisibleItem) return;
+
+    if (lastVisibleItem.index >= posts.length - 3) {
+      loadMore();
+    }
+  }, [virtualItems, posts.length, hasMore, loading, initialLoading, loadMore]);
 
   // Create post handler
   const handleCreatePost = async (postData) => {
@@ -1762,7 +1778,7 @@ export default function Community() {
       )}
 
       {/* Posts feed with virtualization */}
-      <div ref={containerRef}>
+      <div ref={feedContainerRef}>
         <AnimatePresence mode="wait">
         {initialLoading ? (
           <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
@@ -1774,35 +1790,60 @@ export default function Community() {
           <motion.div key="empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
             className="text-center py-20 opacity-50">
             <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-            <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
-            <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
+            {debouncedSearch.trim() ? (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No forum posts match your search</p>
+                <p className="text-sm text-slate-400">
+                  Try a different phrase or clear filters to see more posts.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts available in this feed</p>
+                <p className="text-sm text-slate-400">Try changing sort mode or feed filters.</p>
+              </>
+            )}
           </motion.div>
         ) : (
           <motion.div key={`feed-${sortMode}-${filterType}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
-            style={{ minHeight: totalHeight, position: 'relative' }}>
-            <div style={{ transform: `translateY(${offsetY}px)` }}>
-              {visibleItems.map((post) => (
-                <PostCard
+            style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualItems.map((virtualRow) => {
+              const post = posts[virtualRow.index];
+              if (!post) return null;
+
+              return (
+                <div
                   key={post.id}
-                  post={post}
-                  currentUserId={currentUserId}
-                  isLiked={likedPostIds.has(post.id)}
-                  onLikeChange={handleLikeChange}
-                  onCommentClick={(p) => setCommentPost(p)}
-                  onEdit={(p) => setEditingPost(p)}
-                  onDelete={handleDeletePost}
-                  viewedPostIdsRef={viewedPostIdsRef}
-                  authorName={authorNames[post.author_id]}
-                  linkedItemNames={linkedItemNames}
-                  onLinkedItemClick={handleLinkedItemClick}
-                />
-              ))}
-            </div>
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
+                  }}
+                  className="pb-6"
+                >
+                  <PostCard
+                    post={post}
+                    currentUserId={currentUserId}
+                    isLiked={likedPostIds.has(post.id)}
+                    onLikeChange={handleLikeChange}
+                    onCommentClick={(p) => setCommentPost(p)}
+                    onEdit={(p) => setEditingPost(p)}
+                    onDelete={handleDeletePost}
+                    viewedPostIdsRef={viewedPostIdsRef}
+                    authorName={authorNames[post.author_id]}
+                    linkedItemNames={linkedItemNames}
+                    onLinkedItemClick={handleLinkedItemClick}
+                  />
+                </div>
+              );
+            })}
           </motion.div>
         )}
         </AnimatePresence>
-
-        <div ref={sentinelRef} className="h-4" />
 
         {loading && !initialLoading && (
           <div className="flex items-center justify-center py-8">
