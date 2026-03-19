@@ -1279,6 +1279,7 @@ export default function Community() {
   const [likedPostIds, setLikedPostIds] = useState(new Set());
   const skipRef = useRef(0);
   const fetchIdRef = useRef(0);
+  const requestedSkipsRef = useRef(new Set());
   const viewedPostIdsRef = useRef(new Set());
   const [authorNames, setAuthorNames] = useState({});
   const [linkedItemNames, setLinkedItemNames] = useState({ recipes: {}, workouts: {} });
@@ -1412,6 +1413,19 @@ export default function Community() {
     }
   }, []);
 
+  const applyFeedTypeFilter = useCallback(
+    (items) => {
+      if (filterType === 'Recipes') {
+        return items.filter((post) => (post.linked_recipes || []).length > 0);
+      }
+      if (filterType === 'Workouts') {
+        return items.filter((post) => (post.linked_workouts || []).length > 0);
+      }
+      return items;
+    },
+    [filterType]
+  );
+
   // Fetch posts
   const fetchPosts = useCallback(
     async (reset = false) => {
@@ -1422,13 +1436,20 @@ export default function Community() {
       const currentFetchId = ++fetchIdRef.current;
       const skip = reset ? 0 : skipRef.current;
 
+      if (reset) {
+        requestedSkipsRef.current.clear();
+      } else if (requestedSkipsRef.current.has(skip)) {
+        return;
+      }
+
+      requestedSkipsRef.current.add(skip);
+
       try {
         let data;
 
         if (debouncedSearch.trim()) {
-          const category = filterType === 'Recipes' ? 'recipes' : filterType === 'Workouts' ? 'workouts' : 'posts';
           const result = await forumAPI.searchForum(debouncedSearch, {
-            category,
+            category: 'posts',
             sort_by: sortMode === 'trending' ? 'trending' : 'newest',
             skip,
             limit: PAGE_SIZE,
@@ -1447,22 +1468,21 @@ export default function Community() {
             _created_at: p.created_at,
             _updated_at: p.updated_at,
           }));
-          setHasMore(result.has_more ?? data.length === PAGE_SIZE);
         } else if (sortMode === 'trending') {
           data = await forumAPI.getTrendingPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         } else {
           data = await forumAPI.getPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         }
 
         if (currentFetchId !== fetchIdRef.current) return;
 
-        const mapped = data.map(mapPost);
+        const mapped = applyFeedTypeFilter(data.map(mapPost));
+        const hasMoreByPageSize = data.length === PAGE_SIZE;
+        setHasMore(hasMoreByPageSize);
 
         if (reset) {
           setPosts(mapped);
-          skipRef.current = mapped.length;
+          skipRef.current = data.length;
           if (currentUserId && mapped.length > 0) {
             setLikedPostIds(new Set());
             checkLikeStatus(mapped.map((p) => p.id));
@@ -1474,9 +1494,14 @@ export default function Community() {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
             const newPosts = mapped.filter((p) => !existingIds.has(p.id));
+
+            if (filterType === 'All' && newPosts.length === 0 && mapped.length > 0) {
+              setHasMore(false);
+            }
+
             return [...prev, ...newPosts];
           });
-          skipRef.current = skip + mapped.length;
+          skipRef.current = skip + data.length;
           const newIds = mapped.map((p) => p.id);
           if (currentUserId && newIds.length > 0) {
             checkLikeStatus(newIds);
@@ -1488,6 +1513,7 @@ export default function Community() {
       } catch (e) {
         if (currentFetchId !== fetchIdRef.current) return;
         console.error('Failed to fetch posts:', e);
+        requestedSkipsRef.current.delete(skip);
         setError(e.message);
         setHasMore(false);
       } finally {
@@ -1497,12 +1523,24 @@ export default function Community() {
         }
       }
     },
-    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames, fetchLinkedItemNames]
+    [
+      sortMode,
+      debouncedSearch,
+      filterType,
+      currentUserId,
+      checkLikeStatus,
+      fetchCommentCounts,
+      fetchAuthorNames,
+      fetchLinkedItemNames,
+      applyFeedTypeFilter,
+      loading,
+    ]
   );
 
   // Reset & fetch on sort/search/filter change
   useEffect(() => {
     skipRef.current = 0;
+    requestedSkipsRef.current.clear();
     setPosts([]);
     setHasMore(true);
     setInitialLoading(true);
@@ -1774,8 +1812,19 @@ export default function Community() {
           <motion.div key="empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
             className="text-center py-20 opacity-50">
             <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-            <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
-            <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
+            {debouncedSearch.trim() ? (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No forum posts match your search</p>
+                <p className="text-sm text-slate-400">
+                  Try a different phrase or clear filters to see more posts.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts available in this feed</p>
+                <p className="text-sm text-slate-400">Try changing sort mode or feed filters.</p>
+              </>
+            )}
           </motion.div>
         ) : (
           <motion.div key={`feed-${sortMode}-${filterType}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
