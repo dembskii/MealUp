@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = src
+
+[report]
+skip_empty = True
+show_missing = True
+omit =
+    tests/*
+    src/init_ingredients.py
+    src/init_recipes.py
+    */__pycache__/*
+    */__init__.py
