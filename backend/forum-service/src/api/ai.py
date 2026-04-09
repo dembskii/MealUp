@@ -51,6 +51,9 @@ async def rag_query(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI service temporarily unavailable"
         )
+
+    except HTTPException:
+        raise
     
     except Exception as e:
         logger.error(f"Unexpected error in rag_query: {str(e)}", exc_info=True)

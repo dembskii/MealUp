@@ -57,7 +57,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Docker"""
-    return {"status": "healthy", "service": "user-service"}
+    return {"status": "healthy", "service": "forum-service"}
 
 
 if __name__ == "__main__":

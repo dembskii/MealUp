@@ -6,9 +6,10 @@ import {
   Search, Flame, Clock, X,
   Eye, TrendingUp, Send, Plus, Hash, Loader2,
   Pencil, Trash2, AlertTriangle, ChefHat, Dumbbell, ChevronDown, ExternalLink,
-  ArrowRight, CheckCircle2, Sparkles, Bot, Minus
+  ArrowRight, CheckCircle2, Sparkles, Bot, Minus, Maximize2, Minimize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { useAuth } from '../context/AuthContext';
 import * as forumAPI from '../services/forumService';
 import { batchGetDisplayNames } from '../services/userService';
@@ -86,62 +87,6 @@ function countTreeComments(tree) {
 }
 
 // ======================== HOOKS ========================
-
-function useInfiniteScroll(callback, hasMore, loading) {
-  const sentinelRef = useRef(null);
-
-  useEffect(() => {
-    if (!hasMore || loading) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) callback();
-      },
-      { rootMargin: '400px' }
-    );
-    const el = sentinelRef.current;
-    if (el) observer.observe(el);
-    return () => { if (el) observer.unobserve(el); };
-  }, [callback, hasMore, loading]);
-
-  return sentinelRef;
-}
-
-// Simple virtualization hook
-function useVirtualList(items, estimatedHeight = 320, overscan = 3) {
-  const containerRef = useRef(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const onScroll = () => {
-      const scrollTop = window.scrollY - (container.offsetTop || 0);
-      const viewportHeight = window.innerHeight;
-
-      const startIdx = Math.max(0, Math.floor(scrollTop / estimatedHeight) - overscan);
-      const endIdx = Math.min(
-        items.length,
-        Math.ceil((scrollTop + viewportHeight) / estimatedHeight) + overscan
-      );
-      setVisibleRange({ start: startIdx, end: endIdx });
-    };
-
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-    };
-  }, [items.length, estimatedHeight, overscan]);
-
-  const totalHeight = items.length * estimatedHeight;
-  const offsetY = visibleRange.start * estimatedHeight;
-  const visibleItems = items.slice(visibleRange.start, visibleRange.end);
-
-  return { containerRef, totalHeight, offsetY, visibleItems, visibleRange };
-}
 
 // ======================== DELETE CONFIRMATION POPUP ========================
 
@@ -389,8 +334,16 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange, auth
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    // Be defensive about post._id vs post.id, though mapPost should ensure post.id
+    const postId = post.id || post._id;
+    if (!postId) {
+      console.warn("No post ID found to load comments");
+      setLoading(false);
+      return;
+    }
+
     forumAPI
-      .getCommentsTree(post.id)
+      .getCommentsTree(postId)
       .then(async (data) => {
         if (cancelled) return;
         setComments(data);
@@ -524,7 +477,7 @@ function CommentModal({ post, onClose, currentUserId, onCommentCountChange, auth
   const totalComments = countTreeComments(comments);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" onClick={onClose}>
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md modal-overlay" onClick={onClose}>
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -695,7 +648,7 @@ function PostCard({ post, onCommentClick, currentUserId, isLiked, onLikeChange, 
   };
 
   return (
-    <div ref={cardRef} className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl mb-6">
+    <div ref={cardRef} className="glass-panel rounded-3xl p-6 transition-all duration-300 hover:shadow-xl">
       {/* Header */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center gap-3">
@@ -1271,9 +1224,12 @@ export default function Community() {
   const [likedPostIds, setLikedPostIds] = useState(new Set());
   const skipRef = useRef(0);
   const fetchIdRef = useRef(0);
+  const requestedSkipsRef = useRef(new Set());
   const viewedPostIdsRef = useRef(new Set());
+  const feedContainerRef = useRef(null);
   const [authorNames, setAuthorNames] = useState({});
   const [linkedItemNames, setLinkedItemNames] = useState({ recipes: {}, workouts: {} });
+  const [feedScrollMargin, setFeedScrollMargin] = useState(0);
 
   // Detail popup state for linked items
   const [detailPopup, setDetailPopup] = useState(null); // { type: 'recipe'|'workout', data: object } | null
@@ -1281,6 +1237,7 @@ export default function Community() {
 
   // RAG AI Assistant state
   const [ragOpen, setRagOpen] = useState(false);
+  const [ragExpanded, setRagExpanded] = useState(false);
   const [ragQuery, setRagQuery] = useState('');
   const [ragMessages, setRagMessages] = useState([]);
   const [ragLoading, setRagLoading] = useState(false);
@@ -1289,6 +1246,15 @@ export default function Community() {
   const ragScrollRef = useRef(null);
 
   const { user: authUser } = useAuth();
+
+  const rowVirtualizer = useWindowVirtualizer({
+    count: posts.length,
+    estimateSize: () => 320,
+    overscan: 6,
+    scrollMargin: feedScrollMargin,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   // Set current user from auth context
   useEffect(() => {
@@ -1310,6 +1276,21 @@ export default function Community() {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  useEffect(() => {
+    const updateFeedOffset = () => {
+      if (!feedContainerRef.current) return;
+      const rect = feedContainerRef.current.getBoundingClientRect();
+      setFeedScrollMargin(rect.top + window.scrollY);
+    };
+
+    updateFeedOffset();
+    window.addEventListener('resize', updateFeedOffset, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', updateFeedOffset);
+    };
+  }, [initialLoading, error, sortMode, debouncedSearch, filterType, posts.length]);
 
   // Check like status for a batch of posts
   const checkLikeStatus = useCallback(
@@ -1403,6 +1384,19 @@ export default function Community() {
     }
   }, []);
 
+  const applyFeedTypeFilter = useCallback(
+    (items) => {
+      if (filterType === 'Recipes') {
+        return items.filter((post) => (post.linked_recipes || []).length > 0);
+      }
+      if (filterType === 'Workouts') {
+        return items.filter((post) => (post.linked_workouts || []).length > 0);
+      }
+      return items;
+    },
+    [filterType]
+  );
+
   // Fetch posts
   const fetchPosts = useCallback(
     async (reset = false) => {
@@ -1413,13 +1407,20 @@ export default function Community() {
       const currentFetchId = ++fetchIdRef.current;
       const skip = reset ? 0 : skipRef.current;
 
+      if (reset) {
+        requestedSkipsRef.current.clear();
+      } else if (requestedSkipsRef.current.has(skip)) {
+        return;
+      }
+
+      requestedSkipsRef.current.add(skip);
+
       try {
         let data;
 
         if (debouncedSearch.trim()) {
-          const category = filterType === 'Recipes' ? 'recipes' : filterType === 'Workouts' ? 'workouts' : 'posts';
           const result = await forumAPI.searchForum(debouncedSearch, {
-            category,
+            category: 'posts',
             sort_by: sortMode === 'trending' ? 'trending' : 'newest',
             skip,
             limit: PAGE_SIZE,
@@ -1438,22 +1439,21 @@ export default function Community() {
             _created_at: p.created_at,
             _updated_at: p.updated_at,
           }));
-          setHasMore(result.has_more ?? data.length === PAGE_SIZE);
         } else if (sortMode === 'trending') {
           data = await forumAPI.getTrendingPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         } else {
           data = await forumAPI.getPosts({ skip, limit: PAGE_SIZE });
-          setHasMore(data.length === PAGE_SIZE);
         }
 
         if (currentFetchId !== fetchIdRef.current) return;
 
-        const mapped = data.map(mapPost);
+        const mapped = applyFeedTypeFilter(data.map(mapPost));
+        const hasMoreByPageSize = data.length === PAGE_SIZE;
+        setHasMore(hasMoreByPageSize);
 
         if (reset) {
           setPosts(mapped);
-          skipRef.current = mapped.length;
+          skipRef.current = data.length;
           if (currentUserId && mapped.length > 0) {
             setLikedPostIds(new Set());
             checkLikeStatus(mapped.map((p) => p.id));
@@ -1465,9 +1465,14 @@ export default function Community() {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
             const newPosts = mapped.filter((p) => !existingIds.has(p.id));
+
+            if (filterType === 'All' && newPosts.length === 0 && mapped.length > 0) {
+              setHasMore(false);
+            }
+
             return [...prev, ...newPosts];
           });
-          skipRef.current = skip + mapped.length;
+          skipRef.current = skip + data.length;
           const newIds = mapped.map((p) => p.id);
           if (currentUserId && newIds.length > 0) {
             checkLikeStatus(newIds);
@@ -1479,6 +1484,7 @@ export default function Community() {
       } catch (e) {
         if (currentFetchId !== fetchIdRef.current) return;
         console.error('Failed to fetch posts:', e);
+        requestedSkipsRef.current.delete(skip);
         setError(e.message);
         setHasMore(false);
       } finally {
@@ -1488,12 +1494,24 @@ export default function Community() {
         }
       }
     },
-    [sortMode, debouncedSearch, filterType, currentUserId, checkLikeStatus, fetchCommentCounts, fetchAuthorNames, fetchLinkedItemNames]
+    [
+      sortMode,
+      debouncedSearch,
+      filterType,
+      currentUserId,
+      checkLikeStatus,
+      fetchCommentCounts,
+      fetchAuthorNames,
+      fetchLinkedItemNames,
+      applyFeedTypeFilter,
+      loading,
+    ]
   );
 
   // Reset & fetch on sort/search/filter change
   useEffect(() => {
     skipRef.current = 0;
+    requestedSkipsRef.current.clear();
     setPosts([]);
     setHasMore(true);
     setInitialLoading(true);
@@ -1512,8 +1530,15 @@ export default function Community() {
     if (!loading && hasMore) fetchPosts(false);
   }, [fetchPosts, loading, hasMore]);
 
-  const sentinelRef = useInfiniteScroll(loadMore, hasMore, loading);
-  const { containerRef, totalHeight, offsetY, visibleItems } = useVirtualList(posts, 280, 5);
+  useEffect(() => {
+    if (loading || initialLoading || !hasMore || posts.length === 0) return;
+    const lastVisibleItem = virtualItems[virtualItems.length - 1];
+    if (!lastVisibleItem) return;
+
+    if (lastVisibleItem.index >= posts.length - 3) {
+      loadMore();
+    }
+  }, [virtualItems, posts.length, hasMore, loading, initialLoading, loadMore]);
 
   // Create post handler
   const handleCreatePost = async (postData) => {
@@ -1605,6 +1630,10 @@ export default function Community() {
   useEffect(() => {
     if (!ragOpen) return;
     function handleClickOutside(e) {
+      // Don't close if a modal is open or if clicking inside a modal overlay
+      if (document.querySelector('.modal-overlay')?.contains(e.target) || e.target.closest('.modal-overlay')) {
+        return;
+      }
       if (ragPanelRef.current && !ragPanelRef.current.contains(e.target)) {
         setRagOpen(false);
       }
@@ -1651,6 +1680,28 @@ export default function Community() {
       setRagLoading(false);
     }
   }, [ragQuery, ragLoading]);
+
+  const handleSourceClick = async (srcId) => {
+    try {
+      setDetailLoading(true);
+      let post = posts.find((p) => String(p.id) === String(srcId));
+      if (!post) {
+        const rawPost = await forumAPI.getPostById(srcId);
+        if (rawPost) post = mapPost(rawPost);
+      }
+      if (post) {
+        setCommentPost(post);
+        // Optionally collapse rag if on mobile so they can see the modal clearly
+        if (window.innerWidth < 640) {
+          setRagOpen(false);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load source post", error);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 max-w-4xl mx-auto">
@@ -1727,7 +1778,7 @@ export default function Community() {
       )}
 
       {/* Posts feed with virtualization */}
-      <div ref={containerRef}>
+      <div ref={feedContainerRef}>
         <AnimatePresence mode="wait">
         {initialLoading ? (
           <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
@@ -1739,35 +1790,60 @@ export default function Community() {
           <motion.div key="empty" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
             className="text-center py-20 opacity-50">
             <Search className="w-12 h-12 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-            <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts found</p>
-            <p className="text-sm text-slate-400">Try adjusting your search or filters</p>
+            {debouncedSearch.trim() ? (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No forum posts match your search</p>
+                <p className="text-sm text-slate-400">
+                  Try a different phrase or clear filters to see more posts.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No posts available in this feed</p>
+                <p className="text-sm text-slate-400">Try changing sort mode or feed filters.</p>
+              </>
+            )}
           </motion.div>
         ) : (
           <motion.div key={`feed-${sortMode}-${filterType}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
-            style={{ minHeight: totalHeight, position: 'relative' }}>
-            <div style={{ transform: `translateY(${offsetY}px)` }}>
-              {visibleItems.map((post) => (
-                <PostCard
+            style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+            {virtualItems.map((virtualRow) => {
+              const post = posts[virtualRow.index];
+              if (!post) return null;
+
+              return (
+                <div
                   key={post.id}
-                  post={post}
-                  currentUserId={currentUserId}
-                  isLiked={likedPostIds.has(post.id)}
-                  onLikeChange={handleLikeChange}
-                  onCommentClick={(p) => setCommentPost(p)}
-                  onEdit={(p) => setEditingPost(p)}
-                  onDelete={handleDeletePost}
-                  viewedPostIdsRef={viewedPostIdsRef}
-                  authorName={authorNames[post.author_id]}
-                  linkedItemNames={linkedItemNames}
-                  onLinkedItemClick={handleLinkedItemClick}
-                />
-              ))}
-            </div>
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
+                  }}
+                  className="pb-6"
+                >
+                  <PostCard
+                    post={post}
+                    currentUserId={currentUserId}
+                    isLiked={likedPostIds.has(post.id)}
+                    onLikeChange={handleLikeChange}
+                    onCommentClick={(p) => setCommentPost(p)}
+                    onEdit={(p) => setEditingPost(p)}
+                    onDelete={handleDeletePost}
+                    viewedPostIdsRef={viewedPostIdsRef}
+                    authorName={authorNames[post.author_id]}
+                    linkedItemNames={linkedItemNames}
+                    onLinkedItemClick={handleLinkedItemClick}
+                  />
+                </div>
+              );
+            })}
           </motion.div>
         )}
         </AnimatePresence>
-
-        <div ref={sentinelRef} className="h-4" />
 
         {loading && !initialLoading && (
           <div className="flex items-center justify-center py-8">
@@ -1949,7 +2025,7 @@ export default function Community() {
       {/* Detail loading overlay */}
       <AnimatePresence>
         {detailLoading && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center">
+          <div className="fixed inset-0 z-[120] flex items-center justify-center">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
               className="relative z-10 p-6 bg-white/90 dark:bg-slate-800/90 rounded-2xl shadow-xl flex items-center gap-3">
@@ -1961,15 +2037,21 @@ export default function Community() {
       </AnimatePresence>
 
       {/* AI Assistant – Floating Widget (bottom-right) */}
-      <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end">
+      <div className="fixed bottom-5 right-5 z-[100] flex flex-col items-end">
         <motion.div
           ref={ragPanelRef}
-          className="glass-panel overflow-hidden relative flex flex-col shadow-2xl shadow-black/10"
+          className="bg-white dark:bg-slate-900 backdrop-blur-2xl border border-slate-200/80 dark:border-white/10 overflow-hidden relative flex flex-col shadow-2xl shadow-slate-200/40 dark:shadow-black/50"
           initial={false}
           animate={{
-            width: ragOpen ? 380 : 180,
-            height: ragOpen ? 480 : 46,
+            width: ragOpen ? (ragExpanded ? 900 : 420) : 180,
+            height: ragOpen ? (ragExpanded ? 800 : 600) : 46,
             borderRadius: ragOpen ? 20 : 23,
+          }}
+          style={{ 
+            originX: 1, 
+            originY: 1,
+            maxWidth: 'calc(100vw - 40px)',
+            maxHeight: ragExpanded ? 'calc(100vh - 40px)' : 'calc(100vh - 120px)'
           }}
           transition={{
             type: 'spring',
@@ -1978,7 +2060,6 @@ export default function Community() {
             mass: 0.8,
             delay: ragOpen ? 0 : 0.06,
           }}
-          style={{ originX: 1, originY: 1 }}
         >
           {/* Collapsed pill */}
           <AnimatePresence>
@@ -2045,6 +2126,13 @@ export default function Community() {
                       </button>
                     )}
                     <button
+                      onClick={() => setRagExpanded(!ragExpanded)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-brand-500 transition-colors"
+                      title={ragExpanded ? "Shrink" : "Expand"}
+                    >
+                      {ragExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                    <button
                       onClick={() => setRagOpen(false)}
                       className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
                       title="Minimize"
@@ -2088,46 +2176,44 @@ export default function Community() {
                         <div className="text-sm leading-relaxed rag-markdown">
                           <ReactMarkdown
                             components={{
-                              h1: ({ children }) => <h3 className="text-base font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
-                              h2: ({ children }) => <h3 className="text-[13px] font-bold mt-3 mb-1.5 text-slate-800 dark:text-white">{children}</h3>,
-                              h3: ({ children }) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-800 dark:text-white">{children}</h4>,
-                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                              strong: ({ children }) => <strong className="font-bold text-slate-800 dark:text-white">{children}</strong>,
+                              h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2 text-slate-800 dark:text-white">{children}</h1>,
+                              h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2 text-slate-800 dark:text-white">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-sm font-bold mt-2 mb-1 text-slate-800 dark:text-white">{children}</h3>,
+                              p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed text-[14px]">{children}</p>,
+                              strong: ({ children }) => <strong className="font-bold text-slate-900 dark:text-white">{children}</strong>,
                               em: ({ children }) => <em className="italic">{children}</em>,
-                              ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
-                              ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
-                              li: ({ children }) => <li className="text-sm">{children}</li>,
+                              ul: ({ children }) => <ul className="list-disc list-outside ml-5 mb-3 space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-outside ml-5 mb-3 space-y-1">{children}</ol>,
+                              li: ({ children }) => <li className="pl-1 marker:text-brand-500">{children}</li>,
                               table: ({ children }) => (
-                                <div className="overflow-x-auto my-2 rounded-lg border border-slate-200/60 dark:border-white/10">
-                                  <table className="w-full text-xs">{children}</table>
+                                <div className="overflow-x-auto my-3 rounded-lg border border-slate-200/60 dark:border-white/10">
+                                  <table className="w-full text-sm">{children}</table>
                                 </div>
                               ),
                               thead: ({ children }) => <thead className="bg-slate-100/80 dark:bg-white/5">{children}</thead>,
-                              th: ({ children }) => <th className="px-2.5 py-1.5 text-left font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200/60 dark:border-white/10">{children}</th>,
-                              td: ({ children }) => <td className="px-2.5 py-1.5 border-b border-slate-100/60 dark:border-white/5">{children}</td>,
-                              code: ({ children }) => <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/10 rounded text-xs font-mono">{children}</code>,
-                              blockquote: ({ children }) => <blockquote className="border-l-2 border-brand-400 pl-3 my-2 text-slate-500 dark:text-slate-400 italic">{children}</blockquote>,
-                              hr: () => <hr className="my-2 border-slate-200/60 dark:border-white/10" />,
+                              th: ({ children }) => <th className="px-3 py-2 text-left font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200/60 dark:border-white/10">{children}</th>,
+                              td: ({ children }) => <td className="px-3 py-2 border-b border-slate-100/60 dark:border-white/5 last:border-0">{children}</td>,
+                              code: ({ children }) => <code className="px-1.5 py-0.5 bg-slate-100 dark:bg-white/10 rounded-md text-[13px] font-mono whitespace-pre-wrap word-break">{children}</code>,
+                              pre: ({ children }) => <pre className="p-3 bg-slate-100 dark:bg-white/5 rounded-lg overflow-x-auto text-[13px] mb-3">{children}</pre>,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-brand-400 pl-3 my-3 text-slate-500 dark:text-slate-400 italic">{children}</blockquote>,
+                              hr: () => <hr className="my-4 border-slate-200/60 dark:border-white/10" />,
                             }}
                           >
                             {msg.content}
                           </ReactMarkdown>
                         </div>
                         {msg.sources?.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-white/10">
+                          <div className="mt-4 pt-3 border-t border-slate-200/40 dark:border-white/10">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Sources</p>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-2">
                               {msg.sources.map((src, si) => (
                                 <button
                                   key={si}
-                                  onClick={() => {
-                                    const post = posts.find((p) => p.id === src.id);
-                                    if (post) setCommentPost(post);
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-[11px] font-medium hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors border border-brand-200/50 dark:border-brand-500/20"
+                                  onClick={() => handleSourceClick(src.id)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-brand-50 w-full sm:w-auto text-left dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 rounded-lg text-[12px] font-medium hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors border border-brand-200/50 dark:border-brand-500/20 shadow-sm"
                                 >
-                                  <ExternalLink className="w-3 h-3" />
-                                  {src.title?.length > 35 ? src.title.slice(0, 35) + '…' : src.title}
+                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{src.title}</span>
                                 </button>
                               ))}
                             </div>

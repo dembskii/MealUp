@@ -21,4 +21,5 @@ EXPOSE 8007
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8007/health || exit 1
-CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8007"]
+    
+CMD ["sh", "-c", "alembic upgrade head && python -m src.init_posts && uvicorn src.main:app --host 0.0.0.0 --port 8007"]

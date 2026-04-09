@@ -1,0 +1,12 @@
+[run]
+branch = True
+source = src
+
+[report]
+skip_empty = True
+show_missing = True
+omit =
+    tests/*
+    src/init_exercises.py
+    */__pycache__/*
+    */__init__.py

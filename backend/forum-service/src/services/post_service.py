@@ -31,7 +31,12 @@ class PostService:
     ) -> List[Post]:
         """Retrieve all posts with pagination"""
         try:
-            statement = select(Post).offset(skip).limit(limit)
+            statement = (
+                select(Post)
+                .order_by(Post.created_at.desc(), Post.id.desc())
+                .offset(skip)
+                .limit(limit)
+            )
             result = await session.exec(statement)
             posts = result.all()
             logger.info(f"Retrieved {len(posts)} posts (skip={skip}, limit={limit})")
@@ -300,7 +305,11 @@ class PostService:
             statement = (
                 select(Post)
                 .where(Post.trending_coefficient >= min_coefficient)
-                .order_by(Post.trending_coefficient.desc())
+                .order_by(
+                    Post.trending_coefficient.desc(),
+                    Post.created_at.desc(),
+                    Post.id.desc()
+                )
                 .offset(skip)
                 .limit(limit)
             )
