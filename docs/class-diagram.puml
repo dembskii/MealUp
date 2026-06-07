@@ -1,0 +1,487 @@
+@startuml MealUp_ClassDiagram
+title Diagram klas systemu MealUp (architektura mikroserwisowa)
+
+' ===================== USTAWIENIA WYGLĄDU =====================
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide circle
+left to right direction
+
+' ============================================================
+' AUTH SERVICE  (Auth0 + Redis - sesje)
+' ============================================================
+package "Auth Service" #F5F0FF {
+    class TokenService {
+        +create_session(tokens, user_info) : str
+        +get_user_from_session(session_id) : Dict
+        +refresh_access_token_for_session(session_id) : str
+        +destroy_session(session_id) : bool
+    }
+    class AuthRedisService {
+        -redis_client
+        +connect() : void
+        +save_session(session_id, data) : bool
+        +get_session(session_id) : Dict
+        +delete_session(session_id) : bool
+        +refresh_session_expiry(session_id) : bool
+    }
+    class SessionData {
+        +str user_id
+        +str email
+        +str refresh_token
+        +str access_token
+        +int created_at
+        +int expires_at
+    }
+    class TokenResponse {
+        +str access_token
+        +str refresh_token
+        +str token_type
+        +int expires_in
+    }
+    class UserInfo {
+        +str user_id
+        +str email
+        +str name
+        +str picture
+    }
+}
+
+' ============================================================
+' API GATEWAY  (routing + walidacja sesji)
+' ============================================================
+package "API Gateway" #EFEFEF {
+    class GatewayRedisService {
+        -redis_client
+        +connect() : void
+        +get_token(session_id) : str
+        +get_session(session_id) : dict
+    }
+}
+
+' ============================================================
+' USER SERVICE  (PostgreSQL)
+' ============================================================
+package "User Service" #EAF7EA {
+    class User {
+        +UUID uid
+        +str auth0_sub
+        +EmailStr email
+        +str username
+        +str first_name
+        +str last_name
+        +date date_of_birth
+        +UserRole role
+        +UserSex sex
+        +int age
+        +BodyParams body_params
+        +List<str> recipe_ids
+        +List<DayRecord> meal_records
+        +datetime created_at
+    }
+    class BodyParams {
+        +float weight
+        +WeightUnit weight_unit
+        +float height
+        +HeightUnit height_unit
+    }
+    class DayRecord {
+        +UUID id
+        +List<StructRecord> records
+        +dict total_macro
+        +datetime created_at
+    }
+    class StructRecord {
+        +str recipe_id
+        +float capacity
+        +TimeOfDay time_of_day
+    }
+    class LikedWorkout {
+        +UUID id
+        +UUID user_id
+        +str workout_id
+        +datetime created_at
+    }
+    class LikedRecipe {
+        +UUID id
+        +UUID user_id
+        +str recipe_id
+        +datetime created_at
+    }
+    enum UserRole {
+        USER
+        TRAINER
+        ADMIN
+    }
+    enum UserSex {
+        MALE
+        FEMALE
+    }
+    enum WeightUnit {
+        KG
+        LB
+    }
+    enum HeightUnit {
+        CM
+        M
+        FT
+    }
+    enum TimeOfDay {
+        BREAKFAST
+        LUNCH
+        DINNER
+        SNACK
+    }
+    class UserSvc <<service>> {
+        +get_or_create_user(session, data) : User
+        +get_user_by_uid(uid) : User
+        +update_user(uid, data) : User
+        +search_users(...) : List<User>
+        +like_workout(user_id, workout_id) : void
+        +like_recipe(user_id, recipe_id) : void
+    }
+}
+
+' ============================================================
+' RECIPE SERVICE  (MongoDB)
+' ============================================================
+package "Recipe Service" #FFF6E5 {
+    class Recipe {
+        +str id
+        +str name
+        +str author_id
+        +List<WeightedIngredient> ingredients
+        +List<str> prepare_instruction
+        +int time_to_prepare
+        +str image
+        +int total_likes
+    }
+    class Ingredient {
+        +str id
+        +str name
+        +str units
+        +str image
+        +Macro macro_per_hundred
+    }
+    class WeightedIngredient {
+        +str ingredient_id
+        +CapacityUnit capacity
+        +float quantity
+    }
+    class Macro {
+        +float calories
+        +float carbs
+        +float proteins
+        +float fats
+    }
+    enum CapacityUnit {
+        GRAM
+        KILOGRAM
+        MILLILITER
+        LITER
+        PIECE
+    }
+    class RecipeSvc <<service>> {
+        +create_recipe(data, author_id) : Recipe
+        +get_recipe(id) : Recipe
+        +update_recipe(...) : Recipe
+        +like_recipe(id) : Recipe
+        +search_recipes(...) : List<Recipe>
+    }
+    class IngredientSvc <<service>> {
+        +create_ingredient(data) : Ingredient
+        +get_ingredient(id) : Ingredient
+        +update_ingredient(...) : Ingredient
+    }
+    class ImageGenerationService <<service>> {
+        +generate_recipe_image(prompt) : str
+    }
+}
+
+' ============================================================
+' WORKOUT SERVICE  (MongoDB)
+' ============================================================
+package "Workout Service" #E5F4FF {
+    class WorkoutPlan {
+        +str id
+        +str name
+        +str trainer_id
+        +List<str> clients
+        +List<str> trainings
+        +dict schedule
+        +bool is_public
+        +int total_likes
+    }
+    class Training {
+        +str id
+        +str name
+        +str creator_id
+        +List<TrainingExercise> exercises
+        +int est_time
+        +TrainingType training_type
+    }
+    class TrainingExercise {
+        +str exercise_id
+        +List<StructSet> sets
+        +int rest_between_sets
+        +str notes
+    }
+    class StructSet {
+        +float volume
+        +SetUnit units
+    }
+    class Exercise {
+        +str id
+        +str name
+        +BodyPart body_part
+        +Advancement advancement
+        +ExerciseCategory category
+        +str description
+        +List<str> hints
+        +str video_url
+    }
+    enum BodyPart {
+        CHEST
+        BACK
+        LEGS
+        FULL_BODY
+        CARDIO
+    }
+    enum Advancement {
+        BEGINNER
+        INTERMEDIATE
+        ADVANCED
+        EXPERT
+    }
+    enum ExerciseCategory {
+        STRENGTH
+        CARDIO
+        FLEXIBILITY
+        YOGA
+    }
+    enum TrainingType {
+        PUSH
+        PULL
+        LEGS
+        FULL_BODY
+        CUSTOM
+    }
+    enum SetUnit {
+        REPS
+        SECONDS
+        METERS
+        CALORIES
+    }
+    class WorkoutPlanSvc <<service>> {
+        +create_plan(data) : WorkoutPlan
+        +get_plan_detailed(id) : WorkoutPlanDetailed
+    }
+    class TrainingSvc <<service>> {
+        +create_training(data) : Training
+        +get_training_with_exercises(id) : TrainingWithExercises
+    }
+    class ExerciseSvc <<service>> {
+        +create_exercise(data) : Exercise
+        +search_exercises(...) : List<Exercise>
+    }
+}
+
+' ============================================================
+' FORUM SERVICE  (PostgreSQL + pgvector / RAG)
+' ============================================================
+package "Forum Service" #FFEAEA {
+    class Post {
+        +UUID id
+        +UUID author_id
+        +str title
+        +str content
+        +int total_likes
+        +List<str> images
+        +int views_count
+        +List<str> tags
+        +List<str> linked_recipes
+        +List<str> linked_workouts
+        +float trending_coefficient
+        +List<float> embedding
+    }
+    class Comment {
+        +UUID id
+        +UUID author_id
+        +str content
+        +int total_likes
+        +UUID post_id
+        +UUID parent_comment_id
+    }
+    class PostLike {
+        +UUID id
+        +UUID user_id
+        +UUID post_id
+    }
+    class CommentLike {
+        +UUID id
+        +UUID user_id
+        +UUID comment_id
+    }
+    class PostView {
+        +UUID id
+        +UUID user_id
+        +UUID post_id
+        +int engagement_seconds
+    }
+    class PostSvc <<service>> {
+        +create_post(data) : Post
+        +track_post_view(...) : void
+        +calculate_trending_coefficient(post) : float
+        +get_trending_posts(...) : List<Post>
+    }
+    class CommentSvc <<service>> {
+        +create_comment(data) : Comment
+        +get_comments_tree(post_id) : List<dict>
+    }
+    class ForumLikeService <<service>> {
+        +track_post_like(...) : void
+        +track_comment_like(...) : void
+    }
+    class SearchService <<service>> {
+        +search(query) : List<Post>
+        +get_popular_tags() : List<str>
+    }
+    class RagService <<service>> {
+        +retrieve(query) : List<Post>
+    }
+    class EmbeddingService <<service>> {
+        +generate_embedding(text) : List<float>
+    }
+}
+
+' ============================================================
+' ANALYTICS SERVICE  (MongoDB)
+' ============================================================
+package "Analytics Service" #F0EAFF {
+    class DailyLog {
+        +str id
+        +str user_id
+        +str date
+        +MacroNutrients total_macros
+        +float calorie_goal
+        +float protein_goal
+        +float carbs_goal
+        +float fats_goal
+    }
+    class MealEntry {
+        +str id
+        +str user_id
+        +str daily_log_id
+        +str date
+        +MealType meal_type
+        +List<MealIngredient> ingredients
+        +str recipe_id
+        +MacroNutrients total_macros
+    }
+    class MealIngredient {
+        +str ingredient_id
+        +str name
+        +float quantity
+        +MacroNutrients macros
+    }
+    class MacroNutrients {
+        +float calories
+        +float proteins
+        +float carbs
+        +float fats
+    }
+    enum MealType {
+        BREAKFAST
+        LUNCH
+        DINNER
+        SNACK
+    }
+    class DailyLogService <<service>> {
+        +get_or_create_daily_log(user_id, date) : DailyLog
+        +recalculate_daily_totals(user_id, date) : void
+    }
+    class MealEntryService <<service>> {
+        +create_meal_entry(data, user_id) : MealEntry
+        +get_meals_for_date(user_id, date) : List<MealEntry>
+    }
+}
+
+' ===================== RELACJE WEWNĄTRZ SERWISÓW =====================
+
+' --- User Service ---
+User "1" *-- "0..1" BodyParams : zawiera
+User "1" *-- "0..*" DayRecord : meal_records
+DayRecord "1" *-- "0..*" StructRecord : records
+User ..> UserRole
+User ..> UserSex
+BodyParams ..> WeightUnit
+BodyParams ..> HeightUnit
+StructRecord ..> TimeOfDay
+UserSvc ..> User : zarządza
+UserSvc ..> LikedWorkout : tworzy
+UserSvc ..> LikedRecipe : tworzy
+
+' --- Recipe Service ---
+Recipe "1" *-- "1..*" WeightedIngredient : ingredients
+Ingredient "1" *-- "0..1" Macro : macro_per_hundred
+WeightedIngredient ..> Ingredient : ingredient_id
+WeightedIngredient ..> CapacityUnit
+RecipeSvc ..> Recipe : zarządza
+RecipeSvc ..> ImageGenerationService : używa
+IngredientSvc ..> Ingredient : zarządza
+
+' --- Workout Service ---
+WorkoutPlan "1" o-- "0..*" Training : trainings
+Training "1" *-- "1..*" TrainingExercise : exercises
+TrainingExercise "1" *-- "1..*" StructSet : sets
+TrainingExercise ..> Exercise : exercise_id
+Exercise ..> BodyPart
+Exercise ..> Advancement
+Exercise ..> ExerciseCategory
+Training ..> TrainingType
+StructSet ..> SetUnit
+WorkoutPlanSvc ..> WorkoutPlan : zarządza
+TrainingSvc ..> Training : zarządza
+ExerciseSvc ..> Exercise : zarządza
+
+' --- Forum Service ---
+Post "1" *-- "0..*" Comment : comments
+Comment "0..1" o-- "0..*" Comment : parent_comment_id
+Post "1" *-- "0..*" PostLike : likes
+Comment "1" *-- "0..*" CommentLike : likes
+Post "1" *-- "0..*" PostView : views
+PostSvc ..> Post : zarządza
+CommentSvc ..> Comment : zarządza
+ForumLikeService ..> PostLike : tworzy
+ForumLikeService ..> CommentLike : tworzy
+PostSvc ..> EmbeddingService : używa
+SearchService ..> RagService : używa
+RagService ..> Post : retrieve
+
+' --- Analytics Service ---
+DailyLog "1" *-- "0..*" MealEntry : meal_entries
+MealEntry "1" *-- "0..*" MealIngredient : ingredients
+DailyLog "1" *-- "1" MacroNutrients : total_macros
+MealEntry "1" *-- "1" MacroNutrients : total_macros
+MealIngredient "1" *-- "1" MacroNutrients : macros
+MealEntry ..> MealType
+DailyLogService ..> DailyLog : zarządza
+MealEntryService ..> MealEntry : zarządza
+
+' ===================== RELACJE MIĘDZY SERWISAMI (po ID) =====================
+TokenService ..> AuthRedisService : używa
+GatewayRedisService ..> SessionData : czyta sesję
+User ..> Recipe : recipe_ids
+LikedRecipe ..> Recipe : recipe_id
+LikedWorkout ..> Training : workout_id
+Recipe ..> User : author_id
+Post ..> User : author_id
+Post ..> Recipe : linked_recipes
+Post ..> Training : linked_workouts
+WorkoutPlan ..> User : trainer_id / clients
+MealEntry ..> Recipe : recipe_id
+MealIngredient ..> Ingredient : ingredient_id
+MealEntryService ..> RecipeSvc : recipe_client
+
+@enduml
