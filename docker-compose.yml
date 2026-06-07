@@ -103,22 +103,22 @@ services:
       - mealup-network
 
   # Payment Service
-  payment-service:
-    build:
-      context: ./backend
-      dockerfile: payment-service/Dockerfile
-    ports:
-      - "8005:8005"
-    environment:
-      - PAYMENT_DATABASE_URL=${PAYMENT_DATABASE_URL}
-      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
-      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
-      - ALGORITHMS=${ALGORITHMS}
-    depends_on:
-      shared-postgres-db:
-        condition: service_healthy
-    networks:
-      - mealup-network
+  # payment-service:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: payment-service/Dockerfile
+  #   ports:
+  #     - "8005:8005"
+  #   environment:
+  #     - PAYMENT_DATABASE_URL=${PAYMENT_DATABASE_URL}
+  #     - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+  #     - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+  #     - ALGORITHMS=${ALGORITHMS}
+  #   depends_on:
+  #     shared-postgres-db:
+  #       condition: service_healthy
+  #   networks:
+  #     - mealup-network
 
   # Forum Service
   forum-service:
@@ -229,35 +229,35 @@ services:
       - mealup-network
 
   # Notification Service + Redis
-  notification-service:
-    build:
-      context: ./backend
-      dockerfile: notification-service/Dockerfile
-    ports:
-      - "8008:8008"
-    environment:
-      - REDIS_NOT_URL=${REDIS_NOT_URL}
-      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
-      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
-      - ALGORITHMS=${ALGORITHMS}
-    depends_on:
-      notification-redis:
-        condition: service_healthy
-    networks:
-      - mealup-network
+  # notification-service:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: notification-service/Dockerfile
+  #   ports:
+  #     - "8008:8008"
+  #   environment:
+  #     - REDIS_NOT_URL=${REDIS_NOT_URL}
+  #     - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+  #     - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+  #     - ALGORITHMS=${ALGORITHMS}
+  #   depends_on:
+  #     notification-redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - mealup-network
 
-  notification-redis:
-    image: redis:7-alpine
-    command: redis-server --requirepass ${NOTIFICATION_REDIS_PASSWORD} --appendonly yes
-    volumes:
-      - notification-redis-data:/data
-    networks:
-      - mealup-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+  # notification-redis:
+  #   image: redis:7-alpine
+  #   command: redis-server --requirepass ${NOTIFICATION_REDIS_PASSWORD} --appendonly yes
+  #   volumes:
+  #     - notification-redis-data:/data
+  #   networks:
+  #     - mealup-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 5
 
   # Frontend - Next.js with hot reload
   frontend:

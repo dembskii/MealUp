@@ -15,8 +15,6 @@ import {
   createMealEntry,
   deleteMealEntry,
 } from '../services/analyticsService';
-<<<<<<< HEAD
-=======
 
 const CACHE_TTL_MS = 60 * 1000;
 let cachedFoodDatabase = null;
@@ -25,7 +23,6 @@ const inFlightDailyLogRequests = new Map();
 const dailyLogCache = new Map();
 const inFlightMonthSummaryRequests = new Map();
 const monthSummaryCache = new Map();
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
 
 // ---- Date helpers ----
 const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -159,8 +156,6 @@ function mapDailyLogToMeals(log) {
   meals._totalMacro = log?.total_macros || null;
   return meals;
 }
-<<<<<<< HEAD
-=======
 
 function isFresh(entry) {
   return !!entry && Date.now() - entry.ts < CACHE_TTL_MS;
@@ -260,7 +255,6 @@ async function fetchFoodDatabaseDedup() {
 
   return cachedFoodDatabasePromise;
 }
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
 
 export default function Dashboard() {
   const { user: authUser } = useAuth();
@@ -298,15 +292,9 @@ export default function Dashboard() {
   const dateKey = useMemo(() => formatDateKey(selectedDate), [selectedDate]);
   const dailyMeals = allMeals[dateKey] || { ...emptyMealsState(), _totalMacro: null };
 
-<<<<<<< HEAD
-  const refreshDateData = useCallback(async (dateToLoad) => {
-    try {
-      const dailyLog = await getDailyLog(dateToLoad);
-=======
   const refreshDateData = useCallback(async (dateToLoad, force = false) => {
     try {
       const dailyLog = await fetchDailyLogDedup(dateToLoad, force);
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
       const mapped = mapDailyLogToMeals(dailyLog);
       const hasMeals = ['breakfast', 'lunch', 'dinner', 'snack'].some((section) => (mapped[section] || []).length > 0);
 
@@ -323,22 +311,14 @@ export default function Dashboard() {
     }
   }, []);
 
-<<<<<<< HEAD
-  const refreshMonthSummary = useCallback(async (year, month) => {
-=======
   const refreshMonthSummary = useCallback(async (year, month, force = false) => {
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 0);
     const from = formatDateKey(monthStart);
     const to = formatDateKey(monthEnd);
 
     try {
-<<<<<<< HEAD
-      const logs = await getDailyLogsRange(from, to);
-=======
       const logs = await fetchMonthSummaryDedup(from, to, force);
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
       setRecordedDateKeys(new Set((logs || []).map((log) => log.date)));
     } catch (err) {
       console.error('Failed to load date markers:', err);
@@ -353,42 +333,10 @@ export default function Dashboard() {
 
     (async () => {
       try {
-<<<<<<< HEAD
-        const limit = 100;
-        let skip = 0;
-        const recipes = [];
-
-        const ingredients = await getIngredients({ skip: 0, limit: 500 });
-        const map = {};
-        (ingredients || []).forEach((ing) => {
-          const key = ing.id || ing._id;
-          if (key) map[key] = ing;
-        });
-
-        // Recipe API enforces limit <= 100, so fetch in pages.
-        while (true) {
-          const page = await getRecipes({ skip, limit });
-          if (!page?.length) break;
-          recipes.push(...page);
-          if (page.length < limit) break;
-          skip += limit;
-=======
         const mappedRecipes = await fetchFoodDatabaseDedup();
         if (!cancelled) {
           setFoodDatabase(mappedRecipes);
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
         }
-
-        const mappedRecipes = (recipes || []).map((recipe) => ({
-          ...computeRecipeMacrosPer100(recipe, map),
-          id: recipe._id || recipe.id,
-          recipeId: recipe._id || recipe.id,
-          name: recipe.name,
-          ingredients: recipe.ingredients || [],
-          baseTotalGrams: computeRecipeBaseGrams(recipe.ingredients || []),
-          image: recipe.image || `https://picsum.photos/seed/${recipe._id || recipe.id}/200/200`,
-        }));
-        setFoodDatabase(mappedRecipes);
       } catch (err) {
         console.error('Failed to load recipes for dashboard:', err);
       }
@@ -402,9 +350,6 @@ export default function Dashboard() {
   // Load selected date meals from analytics
   useEffect(() => {
     if (!authUser?.internal_uid) return;
-<<<<<<< HEAD
-    refreshDateData(dateKey);
-=======
     let cancelled = false;
 
     (async () => {
@@ -415,17 +360,11 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
   }, [authUser?.internal_uid, dateKey, refreshDateData]);
 
   // Load calendar markers for visible month
   useEffect(() => {
     if (!authUser?.internal_uid) return;
-<<<<<<< HEAD
-    refreshMonthSummary(calYear, calMonth);
-  }, [authUser?.internal_uid, calYear, calMonth, refreshMonthSummary]);
-
-=======
     let cancelled = false;
 
     (async () => {
@@ -444,7 +383,6 @@ export default function Dashboard() {
     return foodDatabase.filter((item) => item.name.toLowerCase().includes(query));
   }, [foodDatabase, searchQuery]);
 
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
   const [newRecipe, setNewRecipe] = useState({
     name: '', time: '', ingredientName: '', ingredientAmount: '100',
     ingredientUnit: 'grams (g)', ingredients: [], currentStep: '', steps: []
@@ -534,13 +472,8 @@ export default function Dashboard() {
       }
 
       await createMealEntry(payload);
-<<<<<<< HEAD
-      await refreshDateData(dateKey);
-      await refreshMonthSummary(calYear, calMonth);
-=======
       await refreshDateData(dateKey, true);
       await refreshMonthSummary(calYear, calMonth, true);
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
       setIsAddModalOpen(false);
       setPortionGrams('100');
     } catch (err) {
@@ -557,13 +490,8 @@ export default function Dashboard() {
     try {
       setIsSavingMeal(true);
       await deleteMealEntry(item.entryId);
-<<<<<<< HEAD
-      await refreshDateData(dateKey);
-      await refreshMonthSummary(calYear, calMonth);
-=======
       await refreshDateData(dateKey, true);
       await refreshMonthSummary(calYear, calMonth, true);
->>>>>>> 80f308d1f6d53491a9564af4b6f95d2b20a02996
     } catch (err) {
       console.error('Failed to delete meal entry:', err);
     } finally {
