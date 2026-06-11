@@ -17,7 +17,6 @@ package "Auth Service :8001\n<<Redis>>" as AUTH #F5F0FF
 package "User Service :8002\n<<PostgreSQL>>" as USER #EAF7EA
 package "Recipe Service :8003\n<<MongoDB>>" as RECIPE #FFF6E5
 package "Workout Service :8004\n<<MongoDB>>" as WORKOUT #E5F4FF
-package "Payment Service :8005\n<<PostgreSQL>>" as PAY #FDEFF4
 package "Analytics Service :8006\n<<MongoDB>>" as ANALYTICS #F0EAFF
 package "Forum Service :8007\n<<PostgreSQL+pgvector>>" as FORUM #FFEAEA
 package "Notification Service :8008\n<<Redis>>" as NOTIF #EAFBF4
@@ -30,7 +29,6 @@ GW --> AUTH : walidacja sesji / login
 GW --> USER
 GW --> RECIPE
 GW --> WORKOUT
-GW --> PAY
 GW --> ANALYTICS
 GW --> FORUM
 GW --> NOTIF

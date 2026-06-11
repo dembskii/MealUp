@@ -7,7 +7,7 @@ skinparam defaultFontName "Noto Sans"
 hide circle
 
 ' ===================== ENCJE (table=True) =====================
-class Post <<entity>> {
+class Post {
     +UUID id <<PK>>
     +UUID author_id
     +str title
@@ -23,7 +23,7 @@ class Post <<entity>> {
     +datetime created_at
     +datetime updated_at
 }
-class Comment <<entity>> {
+class Comment {
     +UUID id <<PK>>
     +UUID author_id
     +str content
@@ -33,7 +33,7 @@ class Comment <<entity>> {
     +datetime created_at
     +datetime updated_at
 }
-class PostLike <<entity>> {
+class PostLike {
     +UUID id <<PK>>
     +UUID user_id
     +UUID post_id <<FK posts.id>>
@@ -41,7 +41,7 @@ class PostLike <<entity>> {
     --
     <<unique (user_id, post_id)>>
 }
-class CommentLike <<entity>> {
+class CommentLike {
     +UUID id <<PK>>
     +UUID user_id
     +UUID comment_id <<FK comments.id>>
@@ -49,7 +49,7 @@ class CommentLike <<entity>> {
     --
     <<unique (user_id, comment_id)>>
 }
-class PostView <<entity>> {
+class PostView {
     +UUID id <<PK>>
     +Optional<UUID> user_id
     +UUID post_id <<FK posts.id>>

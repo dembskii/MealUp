@@ -1,0 +1,214 @@
+@startuml ERD_NoSQL
+title MealUp - Diagram ERD baz NoSQL (MongoDB document store + Redis key-value)
+
+skinparam linetype ortho
+skinparam defaultFontName "Noto Sans"
+hide circle
+hide methods
+skinparam classAttributeIconSize 0
+
+' Notacja:
+'   <<collection>> - kolekcja MongoDB (dokumenty)
+'   <<embedded>>   - obiekt osadzony w dokumencie (nie osobna kolekcja)
+'   <<_id>>        - klucz glowny dokumentu (ObjectId / str)
+'   ref:           - referencja po ID (brak kluczy obcych w MongoDB)
+'   *--            - osadzenie (kompozycja, dokument zawiera obiekt)
+'   ..>            - referencja po ID (luzne sprzezenie)
+
+' ============================================================
+package "recipe_db (Recipe Service - MongoDB)" #FFF6E5 {
+
+  entity recipes <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    name : string
+    author_id : string (ref users)
+    prepare_instruction : string[]
+    time_to_prepare : int
+    image : string
+    total_likes : int
+    ingredients : WeightedIngredient[] <<embedded>>
+    created_at : date
+    updated_at : date
+  }
+
+  entity ingredients <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    name : string
+    units : string
+    image : string
+    macro_per_hundred : Macro <<embedded>>
+    created_at : date
+    updated_at : date
+  }
+
+  entity WeightedIngredient <<embedded>> {
+    ingredient_id : string (ref ingredients)
+    capacity : CapacityUnit
+    quantity : float
+  }
+
+  entity Macro <<embedded>> {
+    calories : float
+    carbs : float
+    proteins : float
+    fats : float
+  }
+}
+
+recipes      *-- "1..*" WeightedIngredient : ingredients[]
+ingredients  *-- "0..1" Macro              : macro_per_hundred
+WeightedIngredient ..> ingredients : ingredient_id
+
+' ============================================================
+package "workout_db (Workout Service - MongoDB)" #E5F4FF {
+
+  entity workout_plans <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    name : string
+    trainer_id : string (ref users)
+    clients : string[] (ref users)
+    trainings : string[] (ref trainings)
+    schedule : object
+    description : string
+    is_public : bool
+    total_likes : int
+    created_at : date
+    updated_at : date
+  }
+
+  entity trainings <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    name : string
+    creator_id : string (ref users)
+    est_time : int
+    training_type : TrainingType
+    description : string
+    exercises : TrainingExercise[] <<embedded>>
+    created_at : date
+    updated_at : date
+  }
+
+  entity exercises <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    name : string
+    body_part : BodyPart
+    advancement : Advancement
+    category : ExerciseCategory
+    description : string
+    hints : string[]
+    image : string
+    video_url : string
+    created_at : date
+    updated_at : date
+  }
+
+  entity TrainingExercise <<embedded>> {
+    exercise_id : string (ref exercises)
+    rest_between_sets : int
+    notes : string
+    sets : StructSet[] <<embedded>>
+  }
+
+  entity StructSet <<embedded>> {
+    volume : float
+    units : SetUnit
+  }
+}
+
+trainings        *-- "1..*" TrainingExercise : exercises[]
+TrainingExercise *-- "1..*" StructSet        : sets[]
+workout_plans    ..> "0..*" trainings        : trainings[] (ref)
+TrainingExercise ..> exercises               : exercise_id
+
+' ============================================================
+package "analytics_db (Analytics Service - MongoDB)" #F0EAFF {
+
+  entity daily_logs <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    user_id : string (ref users)
+    date : string <<IX>>
+    calorie_goal : float
+    protein_goal : float
+    carbs_goal : float
+    fats_goal : float
+    total_macros : MacroNutrients <<embedded>>
+    created_at : date
+    updated_at : date
+  }
+
+  entity meal_entries <<collection>> {
+    + _id : ObjectId <<_id>>
+    --
+    user_id : string (ref users)
+    daily_log_id : string (ref daily_logs)
+    date : string <<IX>>
+    meal_type : MealType
+    recipe_id : string (ref recipes)
+    recipe_name : string
+    note : string
+    ingredients : MealIngredient[] <<embedded>>
+    total_macros : MacroNutrients <<embedded>>
+    created_at : date
+    updated_at : date
+  }
+
+  entity MealIngredient <<embedded>> {
+    ingredient_id : string (ref ingredients)
+    name : string
+    quantity : float
+    macros : MacroNutrients <<embedded>>
+  }
+
+  entity MacroNutrients <<embedded>> {
+    calories : float
+    proteins : float
+    carbs : float
+    fats : float
+  }
+}
+
+daily_logs   *-- "1" MacroNutrients : total_macros
+meal_entries *-- "1" MacroNutrients : total_macros
+meal_entries *-- "0..*" MealIngredient : ingredients[]
+MealIngredient *-- "1" MacroNutrients : macros
+daily_logs   ..> "0..*" meal_entries : daily_log_id (ref)
+meal_entries ..> recipes : recipe_id
+
+' ============================================================
+package "Redis (key-value stores)" #EAFBF4 {
+
+  entity "auth:session:{session_id}" as auth_session <<redis hash>> {
+    user_id : string
+    email : string
+    name : string
+    picture : string
+    access_token : string
+    refresh_token : string
+    created_at : int
+    expires_at : int (TTL)
+  }
+
+  entity "notif:{user_id}:{id}" as notif <<redis hash>> {
+    type : string
+    payload : json
+    read : bool
+    created_at : int (TTL)
+  }
+}
+
+note as N1
+  **MongoDB**: brak schematu i kluczy obcych.
+  Powiazania w obrebie kolekcji = osadzanie (*--).
+  Powiazania miedzy kolekcjami / serwisami = referencje po ID (..>).
+  **Redis**: magazyn klucz-wartosc, sesje i powiadomienia z TTL.
+  Referencje 'ref users / recipes / ingredients' wskazuja
+  na inne bazy (database-per-service) - tylko logiczne.
+end note
+
+@enduml

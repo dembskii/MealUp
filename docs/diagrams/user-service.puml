@@ -7,7 +7,7 @@ skinparam defaultFontName "Noto Sans"
 hide circle
 
 ' ===================== ENCJE (table=True) =====================
-class User <<entity>> {
+class User {
     +UUID uid <<PK>>
     +str auth0_sub <<unique, index>>
     +EmailStr email <<unique, index>>
@@ -24,7 +24,7 @@ class User <<entity>> {
     +datetime created_at
     +datetime update_at
 }
-class LikedWorkout <<entity>> {
+class LikedWorkout {
     +UUID id <<PK>>
     +UUID user_id <<index>>
     +str workout_id <<index>>
@@ -32,7 +32,7 @@ class LikedWorkout <<entity>> {
     --
     <<unique (user_id, workout_id)>>
 }
-class LikedRecipe <<entity>> {
+class LikedRecipe {
     +UUID id <<PK>>
     +UUID user_id <<index>>
     +str recipe_id <<index>>

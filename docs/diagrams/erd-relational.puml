@@ -1,0 +1,149 @@
+@startuml ERD_Relational
+title MealUp - Diagram ERD baz relacyjnych (PostgreSQL, database-per-service)
+
+skinparam linetype ortho
+skinparam defaultFontName "Noto Sans"
+hide circle
+hide methods
+skinparam classAttributeIconSize 0
+
+' Notacja:
+'   <<PK>>  - klucz glowny
+'   <<FK>>  - klucz obcy (tylko w obrebie tej samej bazy / serwisu)
+'   <<UQ>>  - ograniczenie unikalnosci
+'   <<IX>>  - indeks
+' Wzorzec database-per-service: brak kluczy obcych MIEDZY bazami.
+' Powiazania miedzy serwisami sa luzne (referencje po ID -> linie przerywane).
+
+' ============================================================
+package "user_db (User Service)" #EAF7EA {
+
+  entity users <<table>> {
+    + uid : UUID <<PK>>
+    --
+    auth0_sub : VARCHAR <<UQ, IX>>
+    email : VARCHAR <<UQ, IX>>
+    username : VARCHAR
+    first_name : VARCHAR
+    last_name : VARCHAR
+    date_of_birth : DATE
+    role : user_role
+    sex : user_sex
+    age : INT
+    body_params : JSONB
+    recipe_ids : JSONB
+    meal_records : JSONB
+    created_at : TIMESTAMPTZ
+    update_at : TIMESTAMPTZ
+  }
+
+  entity liked_workouts <<table>> {
+    + id : UUID <<PK>>
+    --
+    # user_id : UUID <<FK, IX>>
+    workout_id : VARCHAR <<IX>>
+    created_at : TIMESTAMPTZ
+    --
+    <<UQ (user_id, workout_id)>>
+  }
+
+  entity liked_recipes <<table>> {
+    + id : UUID <<PK>>
+    --
+    # user_id : UUID <<FK, IX>>
+    recipe_id : VARCHAR <<IX>>
+    created_at : TIMESTAMPTZ
+    --
+    <<UQ (user_id, recipe_id)>>
+  }
+}
+
+users ||--o{ liked_workouts : user_id
+users ||--o{ liked_recipes  : user_id
+
+' ============================================================
+package "forum_db (Forum Service + pgvector)" #FFEAEA {
+
+  entity posts <<table>> {
+    + id : UUID <<PK>>
+    --
+    author_id : UUID <<IX>>
+    title : VARCHAR
+    content : TEXT
+    total_likes : INT
+    images : TEXT[]
+    views_count : INT
+    tags : TEXT[]
+    linked_recipes : TEXT[]
+    linked_workouts : TEXT[]
+    trending_coefficient : FLOAT
+    embedding : VECTOR(1536)
+    created_at : TIMESTAMPTZ
+    updated_at : TIMESTAMPTZ
+  }
+
+  entity comments <<table>> {
+    + id : UUID <<PK>>
+    --
+    author_id : UUID <<IX>>
+    content : TEXT
+    total_likes : INT
+    # post_id : UUID <<FK, IX>>
+    # parent_comment_id : UUID <<FK, IX>>
+    created_at : TIMESTAMPTZ
+    updated_at : TIMESTAMPTZ
+  }
+
+  entity post_likes <<table>> {
+    + id : UUID <<PK>>
+    --
+    user_id : UUID <<IX>>
+    # post_id : UUID <<FK, IX>>
+    created_at : TIMESTAMPTZ
+    --
+    <<UQ (user_id, post_id)>>
+  }
+
+  entity comment_likes <<table>> {
+    + id : UUID <<PK>>
+    --
+    user_id : UUID <<IX>>
+    # comment_id : UUID <<FK, IX>>
+    created_at : TIMESTAMPTZ
+    --
+    <<UQ (user_id, comment_id)>>
+  }
+
+  entity post_views <<table>> {
+    + id : UUID <<PK>>
+    --
+    user_id : UUID <<IX>>
+    # post_id : UUID <<FK, IX>>
+    viewed_at : TIMESTAMPTZ
+    engagement_seconds : INT
+  }
+}
+
+posts    ||--o{ comments      : post_id
+comments ||--o{ comments      : parent_comment_id
+posts    ||--o{ post_likes    : post_id
+comments ||--o{ comment_likes : comment_id
+posts    ||--o{ post_views    : post_id
+
+' ============================================================
+' Luzne referencje MIEDZY bazami (po ID, BEZ kluczy obcych)
+posts          ..>  users         : author_id
+comments       ..>  users         : author_id
+liked_workouts ..>  "workout_db"  : workout_id (MongoDB)
+liked_recipes  ..>  "recipe_db"   : recipe_id (MongoDB)
+
+note as N1
+  **database-per-service**
+  Klucze obce istnieja wylacznie
+  w obrebie jednej bazy.
+  Spojnosc miedzy serwisami:
+  referencje po ID + wywolania HTTP.
+  Linie przerywane = referencje miedzybazowe.
+end note
+
+@enduml
