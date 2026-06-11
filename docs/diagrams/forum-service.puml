@@ -1,0 +1,274 @@
+@startuml ForumService_ClassDiagram
+title Forum Service - diagram klas (PostgreSQL + pgvector / RAG)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== ENCJE (table=True) =====================
+class Post <<entity>> {
+    +UUID id <<PK>>
+    +UUID author_id
+    +str title
+    +str content
+    +int total_likes = 0
+    +Optional<List<str>> images
+    +int views_count = 0
+    +Optional<List<str>> tags
+    +Optional<List<str>> linked_recipes
+    +Optional<List<str>> linked_workouts
+    +float trending_coefficient = 0.0
+    +Optional<List<float>> embedding <<Vector(1536)>>
+    +datetime created_at
+    +datetime updated_at
+}
+class Comment <<entity>> {
+    +UUID id <<PK>>
+    +UUID author_id
+    +str content
+    +int total_likes = 0
+    +UUID post_id <<FK posts.id>>
+    +Optional<UUID> parent_comment_id <<FK comments.id>>
+    +datetime created_at
+    +datetime updated_at
+}
+class PostLike <<entity>> {
+    +UUID id <<PK>>
+    +UUID user_id
+    +UUID post_id <<FK posts.id>>
+    +datetime created_at
+    --
+    <<unique (user_id, post_id)>>
+}
+class CommentLike <<entity>> {
+    +UUID id <<PK>>
+    +UUID user_id
+    +UUID comment_id <<FK comments.id>>
+    +datetime created_at
+    --
+    <<unique (user_id, comment_id)>>
+}
+class PostView <<entity>> {
+    +UUID id <<PK>>
+    +Optional<UUID> user_id
+    +UUID post_id <<FK posts.id>>
+    +datetime viewed_at
+    +Optional<int> engagement_seconds
+}
+
+' ===================== DTO / SCHEMATY =====================
+class PostCreate <<dto>> {
+    +str title
+    +str content
+    +Optional<List<str>> tags
+    +Optional<List<str>> images
+    +Optional<List<str>> linked_recipes
+    +Optional<List<str>> linked_workouts
+}
+class PostUpdate <<dto>> {
+    +Optional<str> title
+    +Optional<str> content
+    +Optional<List<str>> tags
+    +Optional<List<str>> images
+    +Optional<List<str>> linked_recipes
+    +Optional<List<str>> linked_workouts
+}
+class PostResponse <<dto>> {
+    +UUID id
+    +UUID author_id
+    +str title
+    +str content
+    +Optional<List<str>> tags
+    +Optional<List<str>> images
+    +Optional<List<str>> linked_recipes
+    +Optional<List<str>> linked_workouts
+    +int total_likes
+    +int views_count
+    +datetime created_at
+    +datetime updated_at
+}
+class PostListResponse <<dto>> {
+    +int total
+    +List<PostResponse> items
+}
+class CommentCreate <<dto>> {
+    +str content
+    +Optional<str> parent_comment_id
+}
+class CommentUpdate <<dto>> {
+    +str content
+}
+class CommentResponse <<dto>> {
+    +str id
+    +str post_id
+    +str user_id
+    +str content
+    +Optional<str> parent_comment_id
+    +int total_likes
+    +datetime created_at
+    +datetime updated_at
+}
+class CommentTreeResponse <<dto>> {
+    +CommentResponse comment
+    +List<CommentTreeResponse> replies
+}
+class PostLikeResponse <<dto>> {
+    +str id
+    +str post_id
+    +str user_id
+    +datetime created_at
+}
+class CommentLikeResponse <<dto>> {
+    +str id
+    +str comment_id
+    +str user_id
+    +datetime created_at
+}
+class PostViewResponse <<dto>> {
+    +str id
+    +str post_id
+    +str user_id
+    +datetime created_at
+}
+
+' ===================== SCHEMATY WYSZUKIWANIA =====================
+enum SearchCategory {
+    ALL
+    POSTS
+    RECIPES
+    WORKOUTS
+    AUTHORS
+}
+enum SearchSortBy {
+    RELEVANCE
+    NEWEST
+    TRENDING
+    MOST_LIKED
+}
+class SearchQuery <<dto>> {
+    +str query
+    +SearchCategory category
+    +Optional<List<str>> tags
+    +Optional<str> author_id
+    +SearchSortBy sort_by
+    +int skip
+    +int limit
+}
+class SearchResponse <<dto>> {
+    +str query
+    +SearchCategory category
+    +int total_results
+    +List<PostSearchResult> posts
+    +List<RecipeSearchResult> recipes
+    +List<WorkoutSearchResult> workouts
+    +List<AuthorSearchResult> authors
+    +bool has_more
+}
+class PostSearchResult <<dto>>
+class RecipeSearchResult <<dto>>
+class WorkoutSearchResult <<dto>>
+class AuthorSearchResult <<dto>>
+class TagSuggestion <<dto>> {
+    +str tag
+    +int count
+}
+class SearchSuggestionsResponse <<dto>> {
+    +str query
+    +List<str> suggestions
+    +List<TagSuggestion> tags
+}
+
+' ===================== SCHEMATY RAG =====================
+class AskRequest <<dto>> {
+    +str question
+    +int top_k
+}
+class AskResponse <<dto>> {
+    +str answer
+    +List<SourceRef> sources
+}
+class SourceRef <<dto>> {
+    +str id
+    +str title
+}
+
+' ===================== SERWISY =====================
+class PostService <<service>> {
+    +get_all_posts(...) : List<Post>
+    +get_post_by_id(id) : Optional<Post>
+    +create_post(data) : Post
+    +update_post(...) : Post
+    +delete_post(id) : bool
+    +track_post_view(...) : PostView
+    +calculate_trending_coefficient(post) : float
+    +get_trending_posts(...) : List<Post>
+    +get_post_views_count(id) : int
+    +recalculate_all_trending_coefficients() : void
+}
+class CommentService <<service>> {
+    +create_comment(data) : Comment
+    +get_comment_by_id(id) : Optional<Comment>
+    +get_comments_by_post(post_id) : List<Comment>
+    +get_comment_replies(id) : List<Comment>
+    +get_comments_tree(post_id) : List<dict>
+    +update_comment(...) : Comment
+    +delete_comment(id) : bool
+    +get_comments_count_by_post(post_id) : int
+}
+class LikeService <<service>> {
+    +track_post_like(...) : void
+    +track_post_unlike(...) : void
+    +get_post_likes_count(id) : int
+    +track_comment_like(...) : void
+    +remove_comment_like(...) : void
+    +has_user_liked_post(...) : bool
+    +has_user_liked_comment(...) : bool
+}
+class SearchService <<service>> {
+    +search(query, ...) : List<Post>
+    +get_search_suggestions(q) : List<str>
+    +get_popular_tags() : List<str>
+    +search_by_tag(tag) : List<Post>
+}
+class RagService <<service>> {
+    +retrieve(query) : List<Post>
+    +generate_answer(query, context) : str
+}
+class EmbeddingService <<service>> {
+    +generate_embedding(text) : List<float>
+}
+
+' ===================== RELACJE =====================
+Post "1" *-- "0..*" Comment
+Comment "0..1" o-- "0..*" Comment : parent (self-ref)
+Post "1" *-- "0..*" PostLike
+Comment "1" *-- "0..*" CommentLike
+Post "1" *-- "0..*" PostView
+PostService ..> Post
+CommentService ..> Comment
+LikeService ..> PostLike
+LikeService ..> CommentLike
+PostService ..> EmbeddingService : generuje embedding
+SearchService ..> RagService
+RagService ..> EmbeddingService
+RagService ..> Post : retrieve (pgvector)
+
+PostService ..> PostCreate
+PostService ..> PostResponse
+CommentService ..> CommentCreate
+CommentService ..> CommentResponse
+SearchService ..> SearchQuery
+SearchService ..> SearchResponse
+SearchQuery ..> SearchCategory
+SearchQuery ..> SearchSortBy
+SearchResponse *-- PostSearchResult
+SearchResponse *-- RecipeSearchResult
+SearchResponse *-- WorkoutSearchResult
+SearchResponse *-- AuthorSearchResult
+RagService ..> AskRequest
+RagService ..> AskResponse
+AskResponse *-- SourceRef
+CommentTreeResponse *-- CommentResponse
+
+@enduml

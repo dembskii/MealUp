@@ -1,0 +1,100 @@
+@startuml AuthService_ClassDiagram
+title Auth Service - diagram klas (Auth0 OAuth2 + Redis)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== SERWISY =====================
+class TokenService <<service>> {
+    +create_session(tokens: Dict, user_info: Dict) : str
+    +get_user_from_session(session_id: str) : Optional<Dict>
+    +refresh_access_token_for_session(session_id: str) : Optional<str>
+    +destroy_session(session_id: str) : bool
+}
+
+class AuthRedisService <<service>> {
+    -redis_client : Redis
+    +connect() : void
+    +disconnect() : void
+    +save_session(session_id: str, data: Dict) : bool
+    +get_session(session_id: str) : Optional<Dict>
+    +delete_session(session_id: str) : bool
+    +refresh_session_expiry(session_id: str) : bool
+}
+
+class Auth0Client <<gateway>> {
+    +exchange_code_for_tokens(code: str) : Auth0TokenResponse
+    +get_user_info(access_token: str) : Auth0UserInfo
+    +refresh_token(refresh_token: str) : Auth0TokenResponse
+}
+
+' ===================== DTO / SCHEMATY =====================
+class LoginRequest <<dto>> {
+    +str username
+    +str password
+}
+class RefreshTokenRequest <<dto>> {
+    +str refresh_token
+}
+class UserInfo <<dto>> {
+    +str user_id
+    +str email
+    +Optional<str> name
+    +Optional<str> picture
+}
+class TokenResponse <<dto>> {
+    +str access_token
+    +Optional<str> refresh_token
+    +str token_type = "Bearer"
+    +int expires_in
+}
+class LoginResponse <<dto>> {
+    +UserInfo user
+    +TokenResponse tokens
+    +str session_id
+}
+class MeResponse <<dto>> {
+    +UserInfo user
+    +str session_id
+}
+class LogoutResponse <<dto>> {
+    +str message
+}
+class SessionData <<dto>> {
+    +str user_id
+    +str email
+    +Optional<str> name
+    +Optional<str> picture
+    +str refresh_token
+    +str access_token
+    +int created_at
+    +int expires_at
+}
+class Auth0TokenResponse <<dto>> {
+    +str access_token
+    +Optional<str> refresh_token
+    +Optional<str> id_token
+    +str token_type
+    +int expires_in
+}
+class Auth0UserInfo <<dto>> {
+    +str sub
+    +str email
+    +bool email_verified
+    +Optional<str> name
+    +Optional<str> picture
+}
+
+' ===================== RELACJE =====================
+TokenService ..> AuthRedisService : uzywa
+TokenService ..> Auth0Client : odswieza token
+TokenService ..> SessionData : serializuje
+Auth0Client ..> Auth0TokenResponse : zwraca
+Auth0Client ..> Auth0UserInfo : zwraca
+LoginResponse *-- UserInfo
+LoginResponse *-- TokenResponse
+MeResponse *-- UserInfo
+
+@enduml

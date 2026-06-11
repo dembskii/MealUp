@@ -1,0 +1,230 @@
+@startuml MealUp_UseCaseDiagram
+title MealUp - Diagram przypadkow uzycia (architektura mikroserwisowa)
+
+' Uwaga: render z podniesionym limitem rozmiaru, np.:
+'   plantuml -DPLANTUML_LIMIT_SIZE=32768 -tpng use-case-diagram.puml
+left to right direction
+skinparam defaultFontName "Noto Sans"
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam nodesep 10
+skinparam ranksep 45
+skinparam ArrowColor #555555
+skinparam usecase {
+    BackgroundColor #FAFAFA
+    BorderColor #888888
+    ArrowColor #555555
+}
+skinparam actor {
+    BackgroundColor #EFEFEF
+    BorderColor #555555
+}
+
+' =========================================================
+'  AKTORZY (Actors)
+' =========================================================
+actor "Gosc\n(niezalogowany)" as Guest
+actor "Uzytkownik\n(zalogowany)" as User
+actor "Trener" as Trainer
+actor "Administrator" as Admin
+
+' --- Aktorzy zewnetrzni / systemowi ---
+actor "Auth0\n(IdP, OAuth2)" as Auth0 <<external>>
+actor "OpenRouter\n(generowanie obrazow AI)" as ImgAI <<external>>
+actor "LLM / RAG\n(asystent AI)" as RagAI <<external>>
+actor "Scheduler\n(zadania cykliczne)" as Scheduler <<system>>
+
+' --- Generalizacja aktorow (dziedziczenie uprawnien) ---
+Guest <|-- User
+User  <|-- Trainer
+User  <|-- Admin
+
+' =========================================================
+'  GRANICA SYSTEMU
+' =========================================================
+rectangle "System MealUp" {
+
+    ' ---------------- AUTH / KONTO ----------------
+    package "Uwierzytelnianie i sesje (Auth Service)" #F5F0FF {
+        usecase "Zarejestruj sie\n(wybor roli: user / trener)" as UC_Register
+        usecase "Zaloguj sie (OAuth2)" as UC_Login
+        usecase "Wyloguj sie" as UC_Logout
+        usecase "Odswiez sesje / token" as UC_Refresh
+        usecase "Pobierz dane zalogowanego\nuzytkownika (/me)" as UC_Me
+        usecase "Synchronizuj konto\nz User Service" as UC_SyncUser
+    }
+
+    ' ---------------- PROFIL UZYTKOWNIKA ----------------
+    package "Profil i konto (User Service)" #EAF7EA {
+        usecase "Przegladaj wlasny profil" as UC_ViewProfile
+        usecase "Edytuj profil\n(dane, parametry ciala)" as UC_EditProfile
+        usecase "Wyszukaj uzytkownikow" as UC_SearchUsers
+        usecase "Usun konto" as UC_DeleteAccount
+        usecase "Dodaj/usun ulubiony przepis" as UC_FavRecipe
+        usecase "Dodaj/usun ulubiony trening" as UC_FavWorkout
+        usecase "Przegladaj ulubione" as UC_ViewFav
+    }
+
+    ' ---------------- PRZEPISY ----------------
+    package "Przepisy i skladniki (Recipe Service)" #FFF6E5 {
+        usecase "Przegladaj / wyszukuj przepisy" as UC_BrowseRecipes
+        usecase "Wyswietl szczegoly przepisu" as UC_RecipeDetails
+        usecase "Dodaj przepis" as UC_CreateRecipe
+        usecase "Edytuj wlasny przepis" as UC_EditRecipe
+        usecase "Usun wlasny przepis" as UC_DeleteRecipe
+        usecase "Polub przepis" as UC_LikeRecipe
+        usecase "Generuj zdjecie potrawy (AI)" as UC_GenImage
+        usecase "Zarzadzaj skladnikami\n(CRUD)" as UC_ManageIngredients
+    }
+
+    ' ---------------- TRENINGI ----------------
+    package "Treningi i plany (Workout Service)" #E5F4FF {
+        usecase "Przegladaj / filtruj cwiczenia" as UC_BrowseExercises
+        usecase "Przegladaj treningi" as UC_BrowseTrainings
+        usecase "Utworz trening" as UC_CreateTraining
+        usecase "Przegladaj plany treningowe" as UC_BrowsePlans
+        usecase "Utworz plan treningowy" as UC_CreatePlan
+        usecase "Edytuj / usun wlasny plan" as UC_EditPlan
+        usecase "Przypisz / usun klienta z planu" as UC_AssignClient
+        usecase "Dodaj / usun trening w planie" as UC_ManagePlanTrainings
+        usecase "Przegladaj plany przypisane\ndo mnie" as UC_AssignedPlans
+        usecase "Polub plan / trening" as UC_LikePlan
+        usecase "Zarzadzaj baza cwiczen\n(CRUD)" as UC_ManageExercises
+    }
+
+    ' ---------------- ANALITYKA / DZIENNIK ----------------
+    package "Dziennik zywieniowy (Analytics Service)" #F0EAFF {
+        usecase "Zarejestruj posilek" as UC_LogMeal
+        usecase "Przegladaj dzienny dziennik" as UC_ViewDaily
+        usecase "Przegladaj podsumowania\n(zakres dat)" as UC_ViewRange
+        usecase "Ustaw cele kaloryczne / makro" as UC_SetGoals
+        usecase "Edytuj / usun wpis posilku" as UC_EditMeal
+        usecase "Pobierz makroskladniki\nz Recipe Service" as UC_FetchMacros
+    }
+
+    ' ---------------- FORUM / SPOLECZNOSC ----------------
+    package "Spolecznosc (Forum Service)" #FFEAEA {
+        usecase "Przegladaj posty\n/ trendujace" as UC_BrowsePosts
+        usecase "Wyswietl post\n(+ liczenie wyswietlen)" as UC_ViewPost
+        usecase "Dodaj post\n(linki do przepisow/treningow)" as UC_CreatePost
+        usecase "Edytuj / usun wlasny post" as UC_EditPost
+        usecase "Polub / odlub post" as UC_LikePost
+        usecase "Komentuj\n(odpowiedzi zagniezdzone)" as UC_Comment
+        usecase "Edytuj / usun wlasny komentarz" as UC_EditComment
+        usecase "Polub komentarz" as UC_LikeComment
+        usecase "Wyszukiwanie pelnotekstowe\n(posty, przepisy, treningi, autorzy)" as UC_GlobalSearch
+        usecase "Sugestie / popularne tagi" as UC_Tags
+        usecase "Zapytaj asystenta AI (RAG)" as UC_AskAI
+        usecase "Przelicz wspolczynnik\ntrending" as UC_Trending
+    }
+
+    ' ---------------- ADMINISTRACJA ----------------
+    package "Administracja" #FDEFF4 {
+        usecase "Zarzadzaj uzytkownikami" as UC_AdminUsers
+        usecase "Moderuj tresci\n(posty / komentarze)" as UC_Moderate
+    }
+}
+
+' =========================================================
+'  RELACJE: GOSC
+' =========================================================
+Guest --> UC_Register
+Guest --> UC_Login
+
+' =========================================================
+'  RELACJE: UZYTKOWNIK (zalogowany)
+' =========================================================
+User --> UC_Logout
+User --> UC_Refresh
+User --> UC_Me
+User --> UC_ViewProfile
+User --> UC_EditProfile
+User --> UC_SearchUsers
+User --> UC_DeleteAccount
+User --> UC_FavRecipe
+User --> UC_FavWorkout
+User --> UC_ViewFav
+
+User --> UC_BrowseRecipes
+User --> UC_RecipeDetails
+User --> UC_CreateRecipe
+User --> UC_EditRecipe
+User --> UC_DeleteRecipe
+User --> UC_LikeRecipe
+
+User --> UC_BrowseExercises
+User --> UC_BrowseTrainings
+User --> UC_CreateTraining
+User --> UC_BrowsePlans
+User --> UC_AssignedPlans
+User --> UC_LikePlan
+
+User --> UC_LogMeal
+User --> UC_ViewDaily
+User --> UC_ViewRange
+User --> UC_SetGoals
+User --> UC_EditMeal
+
+User --> UC_BrowsePosts
+User --> UC_ViewPost
+User --> UC_CreatePost
+User --> UC_EditPost
+User --> UC_LikePost
+User --> UC_Comment
+User --> UC_EditComment
+User --> UC_LikeComment
+User --> UC_GlobalSearch
+User --> UC_Tags
+User --> UC_AskAI
+
+' =========================================================
+'  RELACJE: TRENER (dodatkowe uprawnienia)
+' =========================================================
+Trainer --> UC_CreatePlan
+Trainer --> UC_EditPlan
+Trainer --> UC_AssignClient
+Trainer --> UC_ManagePlanTrainings
+
+' =========================================================
+'  RELACJE: ADMINISTRATOR
+' =========================================================
+Admin --> UC_AdminUsers
+Admin --> UC_Moderate
+Admin --> UC_ManageIngredients
+Admin --> UC_ManageExercises
+Admin --> UC_Trending
+
+' =========================================================
+'  RELACJE: AKTORZY ZEWNETRZNI / SYSTEMOWI
+' =========================================================
+UC_Login ..> Auth0
+UC_Register ..> Auth0
+UC_Refresh ..> Auth0
+UC_GenImage ..> ImgAI
+UC_AskAI ..> RagAI
+Scheduler --> UC_Trending
+
+' =========================================================
+'  RELACJE <<include>> / <<extend>>
+' =========================================================
+UC_Login    ..> UC_SyncUser   : <<include>>
+UC_Register ..> UC_SyncUser   : <<include>>
+UC_CreateRecipe ..> UC_GenImage : <<include>>
+UC_LogMeal  ..> UC_FetchMacros : <<include>>
+UC_AskAI    ..> UC_GlobalSearch : <<include>>
+UC_ViewPost ..> UC_Comment    : <<extend>>
+UC_CreatePost ..> UC_RecipeDetails : <<extend>>
+
+note bottom of UC_SyncUser
+  Po logowaniu w Auth0 serwis Auth
+  automatycznie provisionuje konto
+  w User Service (get_or_create_user).
+end note
+
+note right of Scheduler
+  Zadanie cykliczne aktualizuje
+  wspolczynnik "trending" postow
+  (zaangazowanie + wyswietlenia + czas).
+end note
+
+@enduml

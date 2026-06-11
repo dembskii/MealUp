@@ -1,0 +1,281 @@
+@startuml WorkoutService_ClassDiagram
+title Workout Service - diagram klas (MongoDB)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== DOKUMENTY =====================
+class WorkoutPlan <<document>> {
+    +str id <<_id>>
+    +str name
+    +str trainer_id
+    +List<str> clients
+    +List<str> trainings
+    +Optional<dict> schedule
+    +Optional<str> description
+    +bool is_public = false
+    +int total_likes = 0
+    +datetime created_at
+    +datetime updated_at
+}
+class Training <<document>> {
+    +str id <<_id>>
+    +str name
+    +Optional<str> creator_id
+    +List<TrainingExercise> exercises
+    +int est_time
+    +TrainingType training_type
+    +Optional<str> description
+    +datetime created_at
+    +datetime updated_at
+}
+class Exercise <<document>> {
+    +str id <<_id>>
+    +str name
+    +BodyPart body_part
+    +Advancement advancement
+    +ExerciseCategory category
+    +Optional<str> description
+    +Optional<List<str>> hints
+    +Optional<str> image
+    +Optional<str> video_url
+    +datetime created_at
+    +datetime updated_at
+}
+
+' ===================== OBIEKTY OSADZONE =====================
+class TrainingExercise <<embedded>> {
+    +str exercise_id
+    +List<StructSet> sets
+    +Optional<int> rest_between_sets = 60
+    +Optional<str> notes
+}
+class StructSet <<embedded>> {
+    +float volume
+    +SetUnit units
+}
+
+' ===================== ENUMERACJE =====================
+enum BodyPart {
+    CHEST
+    BACK
+    SHOULDERS
+    BICEPS
+    TRICEPS
+    FOREARMS
+    ABS
+    OBLIQUES
+    QUADRICEPS
+    HAMSTRINGS
+    GLUTES
+    CALVES
+    FULL_BODY
+    CARDIO
+}
+enum Advancement {
+    BEGINNER
+    INTERMEDIATE
+    ADVANCED
+    EXPERT
+}
+enum ExerciseCategory {
+    STRENGTH
+    CARDIO
+    FLEXIBILITY
+    BALANCE
+    PLYOMETRIC
+    CALISTHENICS
+    OLYMPIC_LIFTING
+    POWERLIFTING
+    HIIT
+    YOGA
+    STRETCHING
+}
+enum TrainingType {
+    PUSH
+    PULL
+    LEGS
+    UPPER
+    LOWER
+    FULL_BODY
+    CARDIO
+    HIIT
+    STRENGTH
+    HYPERTROPHY
+    ENDURANCE
+    FLEXIBILITY
+    CUSTOM
+}
+enum SetUnit {
+    REPS
+    SECONDS
+    MINUTES
+    METERS
+    KILOMETERS
+    CALORIES
+}
+enum DayOfWeek {
+    MONDAY = 1
+    TUESDAY = 2
+    WEDNESDAY = 3
+    THURSDAY = 4
+    FRIDAY = 5
+    SATURDAY = 6
+    SUNDAY = 7
+}
+
+' ===================== DTO / SCHEMATY =====================
+class ExerciseCreate <<dto>> {
+    +str name
+    +BodyPart body_part
+    +Advancement advancement
+    +ExerciseCategory category
+    +Optional<str> description
+    +Optional<List<str>> hints
+    +Optional<str> image
+    +Optional<str> video_url
+}
+class ExerciseUpdate <<dto>> {
+    +Optional<str> name
+    +Optional<BodyPart> body_part
+    +Optional<Advancement> advancement
+    +Optional<ExerciseCategory> category
+    +Optional<str> description
+    +Optional<List<str>> hints
+    +Optional<str> image
+    +Optional<str> video_url
+}
+class ExerciseResponse <<dto>> {
+    +str id
+    +str name
+    +BodyPart body_part
+    +Advancement advancement
+    +ExerciseCategory category
+    +Optional<str> description
+    +Optional<List<str>> hints
+    +Optional<str> image
+    +Optional<str> video_url
+    +datetime created_at
+    +datetime updated_at
+}
+class TrainingCreate <<dto>> {
+    +str name
+    +List<TrainingExercise> exercises
+    +int est_time
+    +TrainingType training_type
+    +Optional<str> description
+}
+class TrainingUpdate <<dto>> {
+    +Optional<str> name
+    +Optional<List<TrainingExercise>> exercises
+    +Optional<int> est_time
+    +Optional<TrainingType> training_type
+    +Optional<str> description
+}
+class TrainingResponse <<dto>> {
+    +str id
+    +str name
+    +Optional<str> creator_id
+    +List<TrainingExercise> exercises
+    +int est_time
+    +TrainingType training_type
+    +Optional<str> description
+    +datetime created_at
+    +datetime updated_at
+}
+class TrainingWithExercises <<dto>> {
+    +str id
+    +str name
+    +Optional<str> creator_id
+    +List<dict> exercises
+    +int est_time
+    +TrainingType training_type
+    +Optional<str> description
+}
+class WorkoutPlanCreate <<dto>> {
+    +str name
+    +Optional<List<str>> clients
+    +Optional<List<str>> trainings
+    +Optional<dict> schedule
+    +Optional<str> description
+    +bool is_public
+}
+class WorkoutPlanUpdate <<dto>> {
+    +Optional<str> name
+    +Optional<List<str>> clients
+    +Optional<List<str>> trainings
+    +Optional<dict> schedule
+    +Optional<str> description
+    +Optional<bool> is_public
+}
+class WorkoutPlanResponse <<dto>> {
+    +str id
+    +str name
+    +str trainer_id
+    +List<str> clients
+    +List<str> trainings
+    +Optional<dict> schedule
+    +Optional<str> description
+    +bool is_public
+    +int total_likes
+    +datetime created_at
+    +datetime updated_at
+}
+class WorkoutPlanDetailed <<dto>> {
+    +str id
+    +str name
+    +str trainer_id
+    +List<str> clients
+    +List<TrainingWithExercises> trainings
+    +Optional<str> description
+    +bool is_public
+    +int total_likes
+}
+
+' ===================== SERWISY =====================
+class WorkoutPlanService <<service>> {
+    +create_plan(data, trainer_id) : WorkoutPlan
+    +get_plan(id) : WorkoutPlan
+    +get_plan_detailed(id) : WorkoutPlanDetailed
+    +add_client(plan_id, user_id) : WorkoutPlan
+    +update_plan(...) : WorkoutPlan
+    +like_plan(id) : WorkoutPlan
+    +delete_plan(id) : bool
+}
+class TrainingService <<service>> {
+    +create_training(data, creator_id) : Training
+    +get_training(id) : Optional<Training>
+    +get_trainings(...) : List<Training>
+    +get_trainings_by_ids(ids) : List<Training>
+    +get_training_with_exercises(id) : TrainingWithExercises
+    +update_training(...) : Training
+    +delete_training(id) : bool
+}
+class ExerciseService <<service>> {
+    +create_exercise(data) : Exercise
+    +get_exercise(id) : Optional<Exercise>
+    +get_exercises(...) : List<Exercise>
+    +get_exercises_by_ids(ids) : List<Exercise>
+    +update_exercise(...) : Exercise
+    +delete_exercise(id) : bool
+    +search_exercises(...) : List<Exercise>
+}
+
+' ===================== RELACJE =====================
+WorkoutPlan "1" o-- "0..*" Training : trainings (po ID)
+Training "1" *-- "1..*" TrainingExercise
+TrainingExercise "1" *-- "1..*" StructSet
+TrainingExercise ..> Exercise : exercise_id
+Exercise ..> BodyPart
+Exercise ..> Advancement
+Exercise ..> ExerciseCategory
+Training ..> TrainingType
+StructSet ..> SetUnit
+WorkoutPlan ..> DayOfWeek : schedule
+WorkoutPlanService ..> WorkoutPlan
+TrainingService ..> Training
+ExerciseService ..> Exercise
+
+@enduml

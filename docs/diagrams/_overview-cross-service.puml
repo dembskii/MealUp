@@ -1,0 +1,63 @@
+@startuml MealUp_CrossService_Overview
+title MealUp - zaleznosci miedzy mikroserwisami (referencje po ID, database-per-service)
+
+skinparam linetype ortho
+skinparam defaultFontName "Noto Sans"
+skinparam componentStyle rectangle
+left to right direction
+
+' ===================== KOMPONENTY (mikroserwisy) =====================
+package "Frontend (Next.js)" #FAFAFA {
+    [Web App]
+}
+
+node "API Gateway\n:8000" as GW #EFEFEF
+
+package "Auth Service :8001\n<<Redis>>" as AUTH #F5F0FF
+package "User Service :8002\n<<PostgreSQL>>" as USER #EAF7EA
+package "Recipe Service :8003\n<<MongoDB>>" as RECIPE #FFF6E5
+package "Workout Service :8004\n<<MongoDB>>" as WORKOUT #E5F4FF
+package "Payment Service :8005\n<<PostgreSQL>>" as PAY #FDEFF4
+package "Analytics Service :8006\n<<MongoDB>>" as ANALYTICS #F0EAFF
+package "Forum Service :8007\n<<PostgreSQL+pgvector>>" as FORUM #FFEAEA
+package "Notification Service :8008\n<<Redis>>" as NOTIF #EAFBF4
+
+database "Auth0\n(IdP, OAuth2)" as AUTH0 #FFFFFF
+
+' ===================== PRZEPLYW ZADAN =====================
+[Web App] --> GW : HTTPS / REST
+GW --> AUTH : walidacja sesji / login
+GW --> USER
+GW --> RECIPE
+GW --> WORKOUT
+GW --> PAY
+GW --> ANALYTICS
+GW --> FORUM
+GW --> NOTIF
+
+AUTH --> AUTH0 : OAuth2 (code exchange, userinfo)
+AUTH --> USER : provisioning konta (get_or_create_user)
+
+' ===================== REFERENCJE PO ID (luzne sprzezenie) =====================
+USER ..> RECIPE : recipe_ids / liked_recipes
+USER ..> WORKOUT : liked_workouts (workout_id)
+RECIPE ..> USER : author_id
+
+FORUM ..> USER : author_id
+FORUM ..> RECIPE : linked_recipes
+FORUM ..> WORKOUT : linked_workouts
+
+WORKOUT ..> USER : trainer_id / clients
+
+ANALYTICS ..> RECIPE : fetch_recipe / fetch_ingredient (HTTP)
+ANALYTICS ..> USER : user_id (auth0 sub)
+
+note bottom of FORUM
+  Wzorzec **database-per-service**:
+  brak kluczy obcych miedzy bazami,
+  spojnosc utrzymywana przez
+  referencje po identyfikatorach
+  oraz wywolania HTTP (httpx).
+end note
+
+@enduml

@@ -1,0 +1,125 @@
+@startuml RecipeService_ClassDiagram
+title Recipe Service - diagram klas (MongoDB)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== DOKUMENTY =====================
+class Recipe <<document>> {
+    +str id <<_id>>
+    +str name
+    +str author_id
+    +List<WeightedIngredient> ingredients
+    +List<str> prepare_instruction
+    +int time_to_prepare
+    +Optional<str> image
+    +int total_likes = 0
+    +datetime created_at
+    +datetime updated_at
+}
+class Ingredient <<document>> {
+    +str id <<_id>>
+    +str name
+    +str units
+    +Optional<str> image
+    +Optional<Macro> macro_per_hundred
+    +datetime created_at
+    +datetime updated_at
+}
+
+' ===================== OBIEKTY OSADZONE =====================
+class WeightedIngredient <<embedded>> {
+    +str ingredient_id
+    +CapacityUnit capacity
+    +float quantity
+}
+class Macro <<embedded>> {
+    +float calories
+    +float carbs
+    +float proteins
+    +float fats
+}
+
+' ===================== ENUMERACJE =====================
+enum CapacityUnit {
+    GRAM
+    KILOGRAM
+    MILLILITER
+    LITER
+    TEASPOON
+    TABLESPOON
+    CUP
+    OUNCE
+    POUND
+    PIECE
+}
+
+' ===================== DTO / SCHEMATY =====================
+class RecipeCreate <<dto>> {
+    +str name
+    +List<WeightedIngredient> ingredients
+    +List<str> prepare_instruction
+    +int time_to_prepare
+}
+class RecipeUpdate <<dto>> {
+    +Optional<List<WeightedIngredient>> ingredients
+    +Optional<str> prepare_instruction
+    +Optional<int> time_to_prepare
+}
+class RecipeResponse <<dto>> {
+    .. dziedziczy po Recipe ..
+}
+class IngredientCreate <<dto>> {
+    +str name
+    +str units
+    +Optional<str> image
+    +Optional<Macro> macro_per_hundred
+}
+class IngredientUpdate <<dto>> {
+    +Optional<str> name
+    +Optional<str> units
+    +Optional<str> image
+    +Optional<Macro> macro_per_hundred
+}
+class IngredientResponse <<dto>> {
+    .. dziedziczy po Ingredient ..
+}
+
+' ===================== SERWISY =====================
+class RecipeService <<service>> {
+    +create_recipe(data, author_id) : Recipe
+    +get_recipe(id) : Optional<Recipe>
+    +get_recipes(...) : List<Recipe>
+    +update_recipe(...) : Recipe
+    +delete_recipe(id, author_id) : bool
+    +like_recipe(id) : Recipe
+    +unlike_recipe(id) : Recipe
+    +search_recipes(...) : List<Recipe>
+}
+class IngredientService <<service>> {
+    +create_ingredient(data) : Ingredient
+    +get_ingredient(id) : Optional<Ingredient>
+    +get_ingredients(...) : List<Ingredient>
+    +update_ingredient(...) : Ingredient
+    +delete_ingredient(id) : bool
+}
+class ImageGenerationService <<service>> {
+    +generate_recipe_image(prompt) : str
+}
+
+' ===================== RELACJE =====================
+Recipe "1" *-- "1..*" WeightedIngredient
+Ingredient "1" *-- "0..1" Macro
+WeightedIngredient ..> Ingredient : ingredient_id
+WeightedIngredient ..> CapacityUnit
+RecipeService ..> Recipe
+RecipeService ..> ImageGenerationService : uzywa
+IngredientService ..> Ingredient
+RecipeService ..> RecipeCreate
+IngredientService ..> IngredientCreate
+Recipe <|-- RecipeResponse
+Ingredient <|-- IngredientResponse
+
+@enduml

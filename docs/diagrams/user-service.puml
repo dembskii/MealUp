@@ -1,0 +1,200 @@
+@startuml UserService_ClassDiagram
+title User Service - diagram klas (PostgreSQL)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== ENCJE (table=True) =====================
+class User <<entity>> {
+    +UUID uid <<PK>>
+    +str auth0_sub <<unique, index>>
+    +EmailStr email <<unique, index>>
+    +str username
+    +str first_name
+    +str last_name
+    +Optional<date> date_of_birth
+    +UserRole role = USER
+    +Optional<UserSex> sex
+    +Optional<int> age
+    +Optional<BodyParams> body_params <<JSON>>
+    +Optional<List<str>> recipe_ids <<JSON>>
+    +Optional<List<DayRecord>> meal_records <<JSON>>
+    +datetime created_at
+    +datetime update_at
+}
+class LikedWorkout <<entity>> {
+    +UUID id <<PK>>
+    +UUID user_id <<index>>
+    +str workout_id <<index>>
+    +datetime created_at
+    --
+    <<unique (user_id, workout_id)>>
+}
+class LikedRecipe <<entity>> {
+    +UUID id <<PK>>
+    +UUID user_id <<index>>
+    +str recipe_id <<index>>
+    +datetime created_at
+    --
+    <<unique (user_id, recipe_id)>>
+}
+
+' ===================== OBIEKTY OSADZONE (JSON) =====================
+class BodyParams <<embedded>> {
+    +Optional<float> weight
+    +WeightUnit weight_unit = KG
+    +Optional<float> height
+    +HeightUnit height_unit = CM
+}
+class DayRecord <<embedded>> {
+    +UUID id
+    +List<StructRecord> records
+    +Optional<dict> total_macro
+    +datetime created_at
+    +datetime updated_at
+}
+class StructRecord <<embedded>> {
+    +str recipe_id
+    +float capacity
+    +TimeOfDay time_of_day
+    +datetime created_at
+    +datetime updated_at
+}
+
+' ===================== ENUMERACJE =====================
+enum UserRole {
+    USER
+    TRAINER
+    ADMIN
+}
+enum UserSex {
+    MALE
+    FEMALE
+}
+enum WeightUnit {
+    KG
+    LB
+}
+enum HeightUnit {
+    CM
+    M
+    FT
+}
+enum TimeOfDay {
+    BREAKFAST
+    LUNCH
+    DINNER
+    SNACK
+}
+
+' ===================== DTO / SCHEMATY =====================
+class UserCreate <<dto>> {
+    +EmailStr email
+    +str username
+    +str first_name
+    +str last_name
+    +Optional<date> date_of_birth
+}
+class UserUpdate <<dto>> {
+    +Optional<str> first_name
+    +Optional<str> last_name
+    +Optional<date> date_of_birth
+    +Optional<str> sex
+    +Optional<int> age
+    +Optional<BodyParamsSchema> body_params
+    +Optional<str> username
+    +Optional<List<str>> recipe_ids
+    +Optional<List<DayRecordSchema>> meal_records
+}
+class UserResponse <<dto>> {
+    +UUID uid
+    +str auth0_sub
+    +EmailStr email
+    +str username
+    +str first_name
+    +str last_name
+    +Optional<date> date_of_birth
+    +str role
+    +Optional<str> sex
+    +Optional<int> age
+    +Optional<BodyParamsSchema> body_params
+    +Optional<List<str>> recipe_ids
+    +Optional<List<DayRecordSchema>> meal_records
+    +datetime created_at
+    +datetime update_at
+}
+class UserListResponse <<dto>> {
+    +int total
+    +List<UserResponse> items
+}
+class LikeWorkoutRequest <<dto>> {
+    +str workout_id
+}
+class LikedWorkoutResponse <<dto>> {
+    +UUID id
+    +UUID user_id
+    +str workout_id
+    +datetime created_at
+}
+class WorkoutLikeStatusResponse <<dto>> {
+    +str workout_id
+    +bool is_liked
+}
+class LikeRecipeRequest <<dto>> {
+    +str recipe_id
+}
+class LikedRecipeResponse <<dto>> {
+    +UUID id
+    +UUID user_id
+    +str recipe_id
+    +datetime created_at
+}
+class RecipeLikeStatusResponse <<dto>> {
+    +str recipe_id
+    +bool is_liked
+}
+class BulkLikeCheckResponse <<dto>> {
+    +dict<str, bool> results
+}
+class ErrorResponse <<dto>> {
+    +str detail
+    +int status_code
+}
+
+' ===================== SERWIS =====================
+class UserService <<service>> {
+    +get_or_create_user(session, data) : User
+    +get_user_by_auth0_sub(sub) : Optional<User>
+    +get_user_by_uid(uid) : Optional<User>
+    +get_all_users(skip, limit) : List<User>
+    +update_user(uid, data) : Optional<User>
+    +delete_user(uid) : bool
+    +search_users(...) : List<User>
+    +like_workout(user_id, workout_id) : LikedWorkout
+    +unlike_workout(user_id, workout_id) : bool
+    +is_workout_liked(...) : bool
+    +get_liked_workouts(...) : List<LikedWorkout>
+    +like_recipe(user_id, recipe_id) : LikedRecipe
+    +unlike_recipe(user_id, recipe_id) : bool
+    +get_liked_recipes(...) : List<LikedRecipe>
+}
+
+' ===================== RELACJE =====================
+User "1" *-- "0..1" BodyParams
+User "1" *-- "0..*" DayRecord
+DayRecord "1" *-- "0..*" StructRecord
+User ..> UserRole
+User ..> UserSex
+BodyParams ..> WeightUnit
+BodyParams ..> HeightUnit
+StructRecord ..> TimeOfDay
+UserService ..> User
+UserService ..> LikedWorkout
+UserService ..> LikedRecipe
+UserService ..> UserCreate
+UserService ..> UserUpdate
+UserService ..> UserResponse
+
+@enduml

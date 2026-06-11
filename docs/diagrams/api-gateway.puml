@@ -1,0 +1,38 @@
+@startuml ApiGateway_ClassDiagram
+title API Gateway - diagram klas (reverse proxy + walidacja sesji)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+class GatewayRedisService <<service>> {
+    -redis_client : Redis
+    +connect() : void
+    +close() : void
+    +get_token(session_id: str) : Optional<str>
+    +get_session(session_id: str) : Optional<dict>
+}
+
+class ProxyService <<service>> {
+    +forward_request(service_url: str, request: Request) : Response
+    +inject_auth_header(token: str) : Headers
+    +handle_retry(request: Request, max_retries: int) : Response
+}
+
+class RouteConfig <<config>> {
+    +str AUTH_SERVICE_URL
+    +str USER_SERVICE_URL
+    +str RECIPE_SERVICE_URL
+    +str WORKOUT_SERVICE_URL
+    +str ANALYTICS_SERVICE_URL
+    +str FORUM_SERVICE_URL
+    +str NOTIFICATION_SERVICE_URL
+    +float REQUEST_TIMEOUT
+    +int MAX_RETRIES
+}
+
+ProxyService ..> GatewayRedisService : pobiera token sesji
+ProxyService ..> RouteConfig : routing do serwisow
+
+@enduml

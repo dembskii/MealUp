@@ -1,0 +1,160 @@
+@startuml AnalyticsService_ClassDiagram
+title Analytics Service - diagram klas (MongoDB)
+
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName "Noto Sans"
+hide circle
+
+' ===================== DOKUMENTY =====================
+class DailyLog <<document>> {
+    +str id <<_id>>
+    +str user_id
+    +str date
+    +MacroNutrients total_macros
+    +Optional<float> calorie_goal
+    +Optional<float> protein_goal
+    +Optional<float> carbs_goal
+    +Optional<float> fats_goal
+    +datetime created_at
+    +datetime updated_at
+}
+class MealEntry <<document>> {
+    +str id <<_id>>
+    +str user_id
+    +str daily_log_id
+    +str date
+    +MealType meal_type
+    +List<MealIngredient> ingredients
+    +Optional<str> recipe_id
+    +Optional<str> recipe_name
+    +MacroNutrients total_macros
+    +Optional<str> note
+    +datetime created_at
+    +datetime updated_at
+}
+
+' ===================== OBIEKTY OSADZONE =====================
+class MealIngredient <<embedded>> {
+    +str ingredient_id
+    +str name
+    +float quantity
+    +MacroNutrients macros
+}
+class MacroNutrients <<embedded>> {
+    +float calories = 0.0
+    +float proteins = 0.0
+    +float carbs = 0.0
+    +float fats = 0.0
+}
+
+' ===================== ENUMERACJE =====================
+enum MealType {
+    BREAKFAST
+    LUNCH
+    DINNER
+    SNACK
+}
+
+' ===================== DTO / SCHEMATY =====================
+class MealIngredientCreate <<dto>> {
+    +str ingredient_id
+    +Optional<str> name
+    +float quantity
+    +Optional<MacroNutrients> macros
+}
+class MealEntryCreate <<dto>> {
+    +str date
+    +MealType meal_type
+    +List<MealIngredientCreate> ingredients
+    +Optional<str> recipe_id
+    +Optional<str> recipe_name
+    +Optional<str> note
+}
+class MealEntryUpdate <<dto>> {
+    +Optional<MealType> meal_type
+    +Optional<List<MealIngredientCreate>> ingredients
+    +Optional<str> recipe_id
+    +Optional<str> recipe_name
+    +Optional<str> note
+}
+class MealEntryResponse <<dto>> {
+    +str id
+    +str user_id
+    +str daily_log_id
+    +str date
+    +MealType meal_type
+    +List<MealIngredient> ingredients
+    +Optional<str> recipe_id
+    +Optional<str> recipe_name
+    +MacroNutrients total_macros
+    +Optional<str> note
+    +datetime created_at
+    +datetime updated_at
+}
+class DailyGoalsUpdate <<dto>> {
+    +Optional<float> calorie_goal
+    +Optional<float> protein_goal
+    +Optional<float> carbs_goal
+    +Optional<float> fats_goal
+}
+class DailyLogResponse <<dto>> {
+    +str id
+    +str user_id
+    +str date
+    +MacroNutrients total_macros
+    +Optional<float> calorie_goal
+    +Optional<float> protein_goal
+    +Optional<float> carbs_goal
+    +Optional<float> fats_goal
+    +List<MealEntryResponse> meals
+    +datetime created_at
+    +datetime updated_at
+}
+class DailySummary <<dto>> {
+    +str date
+    +MacroNutrients total_macros
+    +Optional<float> calorie_goal
+    +int meals_count
+}
+
+' ===================== SERWISY =====================
+class DailyLogService <<service>> {
+    +get_or_create_daily_log(user_id, date) : DailyLog
+    +get_daily_log(user_id, date) : Optional<DailyLog>
+    +get_daily_logs_range(...) : List<DailyLog>
+    +update_goals(user_id, date, goals) : DailyLog
+    +recalculate_daily_totals(user_id, date) : void
+}
+class MealEntryService <<service>> {
+    +create_meal_entry(data, user_id) : MealEntry
+    +get_meal_entry(id, user_id) : Optional<MealEntry>
+    +get_meals_for_date(user_id, date) : List<MealEntry>
+    +update_meal_entry(...) : MealEntry
+    +delete_meal_entry(id, user_id) : bool
+}
+class RecipeClient <<gateway>> {
+    +fetch_recipe(recipe_id) : dict
+    +fetch_ingredient(id) : dict
+    +fetch_ingredients_bulk(ids) : dict
+    +convert_to_grams(qty, unit) : float
+}
+
+' ===================== RELACJE =====================
+DailyLog "1" *-- "0..*" MealEntry : (po daily_log_id)
+MealEntry "1" *-- "0..*" MealIngredient
+DailyLog "1" *-- "1" MacroNutrients : total_macros
+MealEntry "1" *-- "1" MacroNutrients : total_macros
+MealIngredient "1" *-- "1" MacroNutrients
+MealEntry ..> MealType
+DailyLogService ..> DailyLog
+MealEntryService ..> MealEntry
+MealEntryService ..> RecipeClient : pobiera makra
+MealEntryService ..> MealEntryCreate
+MealEntryService ..> MealEntryResponse
+DailyLogService ..> DailyGoalsUpdate
+DailyLogService ..> DailyLogResponse
+MealEntryCreate *-- MealIngredientCreate
+DailyLogResponse *-- MealEntryResponse
+
+@enduml
